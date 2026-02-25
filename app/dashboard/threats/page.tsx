@@ -23,14 +23,12 @@ export default function ThreatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'quarantined' | 'released' | 'deleted'>('all');
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const fetchThreats = useCallback(async () => {
     if (!currentTenant) return;
 
     try {
       const params = new URLSearchParams();
-      // Always send status parameter - API needs explicit 'all' to show all statuses
       params.set('status', filter);
 
       const response = await fetch(`/api/threats?${params}`);
@@ -48,47 +46,6 @@ export default function ThreatsPage() {
   useEffect(() => {
     fetchThreats();
   }, [fetchThreats]);
-
-  async function releaseThreat(threatId: string) {
-    setActionLoading(threatId);
-    try {
-      const response = await fetch(`/api/threats/${threatId}/release`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ addToAllowlist: false }),
-      });
-      if (!response.ok) {
-        const data = await response.json();
-        setError(`Release failed: ${data.error || 'Unknown error'}`);
-        return;
-      }
-      await fetchThreats();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Release failed');
-    } finally {
-      setActionLoading(null);
-    }
-  }
-
-  async function deleteThreat(threatId: string) {
-    if (!confirm('Permanently delete this email?')) return;
-    setActionLoading(threatId);
-    try {
-      const response = await fetch(`/api/threats/${threatId}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) {
-        const data = await response.json();
-        setError(`Delete failed: ${data.error || 'Unknown error'}`);
-        return;
-      }
-      await fetchThreats();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed');
-    } finally {
-      setActionLoading(null);
-    }
-  }
 
   const getThreatTypeBadge = (type: string) => {
     const colors: Record<string, string> = {
@@ -125,14 +82,14 @@ export default function ThreatsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Threats</h1>
           <p className="mt-1 text-sm text-gray-500">
-            View and manage detected email threats
+            Read-only overview of detected email threats. To take action, use the Quarantine page.
           </p>
         </div>
         <Link
-          href="/dashboard/threats/bulk"
+          href="/dashboard/quarantine"
           className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
         >
-          Bulk Actions
+          Manage Quarantine
         </Link>
       </div>
 
@@ -197,7 +154,7 @@ export default function ThreatsPage() {
                   Detected
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
+                  Details
                 </th>
               </tr>
             </thead>
@@ -239,34 +196,33 @@ export default function ThreatsPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <Link
                       href={`/dashboard/threats/${threat.id}`}
-                      className="text-blue-600 hover:text-blue-900 mr-3"
+                      className="text-blue-600 hover:text-blue-900"
                     >
-                      View
+                      View Details
                     </Link>
-                    {threat.status === 'quarantined' && (
-                      <>
-                        <button
-                          onClick={() => releaseThreat(threat.id)}
-                          disabled={actionLoading === threat.id}
-                          className="text-green-600 hover:text-green-900 mr-3 disabled:opacity-50"
-                        >
-                          {actionLoading === threat.id ? '...' : 'Release'}
-                        </button>
-                        <button
-                          onClick={() => deleteThreat(threat.id)}
-                          disabled={actionLoading === threat.id}
-                          className="text-red-600 hover:text-red-900 disabled:opacity-50"
-                        >
-                          Delete
-                        </button>
-                      </>
-                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
+      </div>
+
+      {/* Info banner */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-start gap-3">
+          <InfoIcon className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+          <div>
+            <h4 className="font-medium text-blue-900">Looking for quarantine actions?</h4>
+            <p className="text-sm text-blue-700 mt-1">
+              To release, delete, report false positives, or manage sender lists, go to the{' '}
+              <Link href="/dashboard/quarantine" className="underline font-medium">
+                Quarantine page
+              </Link>
+              . This page is a read-only view of all detected threats.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -276,6 +232,14 @@ function ShieldCheckIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+    </svg>
+  );
+}
+
+function InfoIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
     </svg>
   );
 }

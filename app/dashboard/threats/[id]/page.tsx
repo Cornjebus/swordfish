@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTenant } from '@/lib/auth/tenant-context';
+import { toast } from 'sonner';
 import Link from 'next/link';
 
 interface ThreatDetail {
@@ -104,6 +105,32 @@ export default function ThreatDetailPage() {
     }
   };
 
+  const handleReportFalsePositive = async () => {
+    if (!threat) return;
+    setActionLoading(true);
+    try {
+      const response = await fetch(`/api/threats/${threat.id}/release`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isFalsePositive: true, addToAllowlist: true }),
+      });
+      if (!response.ok) throw new Error('Failed to report false positive');
+      toast.success('Reported as false positive. Sender added to allowlist.');
+      // Re-fetch threat to get updated state from server
+      const refreshed = await fetch(`/api/threats/${threat.id}`);
+      if (refreshed.ok) {
+        const data = await refreshed.json();
+        setThreat(data.threat);
+      } else {
+        setThreat({ ...threat, status: 'released', releasedAt: new Date().toISOString() });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to report false positive');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const getSeverityColor = (severity: string) => {
     switch (severity?.toLowerCase()) {
       case 'critical': return 'bg-red-100 text-red-800 border-red-200';
@@ -170,6 +197,13 @@ export default function ThreatDetailPage() {
         <div className="flex items-center gap-3">
           {threat.status === 'quarantined' && (
             <>
+              <button
+                onClick={handleReportFalsePositive}
+                disabled={actionLoading}
+                className="px-4 py-2 border-2 border-yellow-500 text-yellow-700 bg-yellow-50 rounded-md hover:bg-yellow-100 disabled:opacity-50 font-medium"
+              >
+                Report False Positive
+              </button>
               <button
                 onClick={handleRelease}
                 disabled={actionLoading}

@@ -36,7 +36,7 @@ interface TenantSettings {
   };
 }
 
-type TabId = 'detection' | 'notifications' | 'quarantine' | 'integrations' | 'display';
+type TabId = 'detection' | 'notifications' | 'quarantine' | 'display';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<TenantSettings | null>(null);
@@ -121,7 +121,6 @@ export default function SettingsPage() {
     { id: 'detection', label: 'Detection' },
     { id: 'notifications', label: 'Notifications' },
     { id: 'quarantine', label: 'Quarantine' },
-    { id: 'integrations', label: 'Integrations' },
     { id: 'display', label: 'Display' },
   ];
 
@@ -187,15 +186,6 @@ export default function SettingsPage() {
         />
       )}
 
-      {/* Integration Settings */}
-      {activeTab === 'integrations' && (
-        <IntegrationSettings
-          settings={settings.integrations}
-          onSave={(values) => saveSettings('integrations', values)}
-          saving={saving}
-        />
-      )}
-
       {/* Display Settings */}
       {activeTab === 'display' && (
         <DisplaySettings
@@ -238,7 +228,15 @@ function DetectionSettings({
               min="0"
               max="100"
               value={values.suspiciousThreshold}
-              onChange={(e) => setValues({ ...values, suspiciousThreshold: Number(e.target.value) })}
+              onChange={(e) => {
+                const suspicious = Number(e.target.value);
+                setValues(prev => ({
+                  ...prev,
+                  suspiciousThreshold: suspicious,
+                  quarantineThreshold: Math.max(suspicious, prev.quarantineThreshold),
+                  blockThreshold: Math.max(suspicious, prev.blockThreshold),
+                }));
+              }}
               className="w-full"
             />
             <p className="text-xs text-gray-500">Emails above this score will be marked as suspicious</p>
@@ -253,7 +251,15 @@ function DetectionSettings({
               min="0"
               max="100"
               value={values.quarantineThreshold}
-              onChange={(e) => setValues({ ...values, quarantineThreshold: Number(e.target.value) })}
+              onChange={(e) => {
+                const quarantine = Number(e.target.value);
+                setValues(prev => ({
+                  ...prev,
+                  suspiciousThreshold: Math.min(quarantine, prev.suspiciousThreshold),
+                  quarantineThreshold: quarantine,
+                  blockThreshold: Math.max(quarantine, prev.blockThreshold),
+                }));
+              }}
               className="w-full"
             />
             <p className="text-xs text-gray-500">Emails above this score will be quarantined</p>
@@ -268,7 +274,15 @@ function DetectionSettings({
               min="0"
               max="100"
               value={values.blockThreshold}
-              onChange={(e) => setValues({ ...values, blockThreshold: Number(e.target.value) })}
+              onChange={(e) => {
+                const block = Number(e.target.value);
+                setValues(prev => ({
+                  ...prev,
+                  suspiciousThreshold: Math.min(block, prev.suspiciousThreshold),
+                  quarantineThreshold: Math.min(block, prev.quarantineThreshold),
+                  blockThreshold: block,
+                }));
+              }}
               className="w-full"
             />
             <p className="text-xs text-gray-500">Emails above this score will be blocked</p>
@@ -516,130 +530,6 @@ function QuarantineSettings({
       >
         {saving ? 'Saving...' : 'Save Changes'}
       </button>
-    </div>
-  );
-}
-
-// Integration Settings Component
-function IntegrationSettings({
-  settings,
-  onSave,
-  saving,
-}: {
-  settings: TenantSettings['integrations'];
-  onSave: (values: Partial<TenantSettings['integrations']>) => void;
-  saving: boolean;
-}) {
-  const [webhookToken, setWebhookToken] = useState(settings.webhookToken || '');
-
-  const generateToken = () => {
-    const token = 'swf_' + Array.from(crypto.getRandomValues(new Uint8Array(24)))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-    setWebhookToken(token);
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg border p-6">
-        <h3 className="font-semibold mb-4">Email Providers</h3>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <span className="text-blue-600 font-bold">M</span>
-              </div>
-              <div>
-                <p className="font-medium">Microsoft 365</p>
-                <p className="text-sm text-gray-500">
-                  {settings.microsoftConnected ? 'Connected' : 'Not connected'}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => window.location.href = '/api/auth/microsoft'}
-              className={`px-4 py-2 rounded ${
-                settings.microsoftConnected
-                  ? 'bg-gray-100 text-gray-700'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
-            >
-              {settings.microsoftConnected ? 'Reconnect' : 'Connect'}
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                <span className="text-red-600 font-bold">G</span>
-              </div>
-              <div>
-                <p className="font-medium">Google Workspace</p>
-                <p className="text-sm text-gray-500">
-                  {settings.googleConnected ? 'Connected' : 'Not connected'}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => window.location.href = '/api/auth/google'}
-              className={`px-4 py-2 rounded ${
-                settings.googleConnected
-                  ? 'bg-gray-100 text-gray-700'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
-            >
-              {settings.googleConnected ? 'Reconnect' : 'Connect'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg border p-6">
-        <h3 className="font-semibold mb-4">Webhook API</h3>
-        <p className="text-sm text-gray-600 mb-4">
-          Use this token to authenticate webhook requests to the email processing API.
-        </p>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Webhook Token</label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={webhookToken}
-                readOnly
-                className="border rounded px-3 py-2 flex-1 bg-gray-50 font-mono text-sm"
-                placeholder="Click generate to create a token"
-              />
-              <button
-                onClick={generateToken}
-                className="bg-gray-100 px-4 py-2 rounded hover:bg-gray-200"
-              >
-                Generate
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-gray-50 rounded p-4">
-            <p className="text-sm font-medium mb-2">Webhook Endpoint</p>
-            <code className="text-sm text-gray-700 break-all">
-              POST /api/webhooks/email
-            </code>
-            <p className="text-xs text-gray-500 mt-2">
-              Include header: <code>X-Webhook-Token: {webhookToken || '<your-token>'}</code>
-            </p>
-          </div>
-        </div>
-
-        <button
-          onClick={() => onSave({ webhookToken })}
-          disabled={saving || !webhookToken}
-          className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : 'Save Token'}
-        </button>
-      </div>
     </div>
   );
 }

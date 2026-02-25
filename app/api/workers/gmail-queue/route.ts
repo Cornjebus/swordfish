@@ -9,7 +9,8 @@ import { analyzeEmail } from '@/lib/detection/pipeline';
 import { parseGmailEmail } from '@/lib/detection/parser';
 import { storeVerdict } from '@/lib/detection/storage';
 import { sendThreatNotification } from '@/lib/notifications/service';
-import { getGmailAccessToken, getGmailHistory, getGmailMessage } from '@/lib/integrations/gmail';
+import { getGmailHistory, getGmailMessage } from '@/lib/integrations/gmail';
+import { getAccessToken } from '@/lib/oauth';
 import { autoRemediate } from '@/lib/workers/remediation';
 import { logAuditEvent } from '@/lib/db/audit';
 import {
@@ -52,7 +53,7 @@ async function processJob(job: GmailQueueJob, timeBudgetMs: number): Promise<{
   const startTime = Date.now();
 
   const [integration] = await sql`
-    SELECT id, tenant_id, config, nango_connection_id, status
+    SELECT id, tenant_id, config, status
     FROM integrations
     WHERE id = ${job.integrationId}
   `;
@@ -66,19 +67,11 @@ async function processJob(job: GmailQueueJob, timeBudgetMs: number): Promise<{
     };
   }
 
-  if (!integration.nango_connection_id) {
-    return {
-      processed,
-      threats,
-      complete: false,
-      errors: ['No Nango connection configured'],
-    };
-  }
-
   const tenantId = integration.tenant_id as string;
   const config = integration.config as { historyId?: string };
 
-  const accessToken = await getGmailAccessToken(integration.nango_connection_id as string);
+  // Get fresh access token (auto-refreshes if expired)
+  const accessToken = await getAccessToken(tenantId, 'gmail');
 
   const startHistoryId = config.historyId || job.historyId;
   const historyResult = await getGmailHistory({

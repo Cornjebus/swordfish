@@ -270,11 +270,11 @@ export default function OnboardingPage() {
   };
 
   const handleConnectMicrosoft = () => {
-    window.location.href = '/api/auth/microsoft';
+    window.location.href = '/api/integrations/o365';
   };
 
   const handleConnectGoogle = () => {
-    window.location.href = '/api/auth/google';
+    window.location.href = '/api/integrations/gmail';
   };
 
   const renderStepContent = () => {
@@ -476,10 +476,18 @@ export default function OnboardingPage() {
                   min="10"
                   max="50"
                   value={settings.detection.suspiciousThreshold}
-                  onChange={(e) => setSettings(prev => ({
-                    ...prev,
-                    detection: { ...prev.detection, suspiciousThreshold: parseInt(e.target.value) },
-                  }))}
+                  onChange={(e) => {
+                    const suspicious = parseInt(e.target.value);
+                    setSettings(prev => ({
+                      ...prev,
+                      detection: {
+                        ...prev.detection,
+                        suspiciousThreshold: suspicious,
+                        quarantineThreshold: Math.max(suspicious, prev.detection.quarantineThreshold),
+                        blockThreshold: Math.max(suspicious, prev.detection.blockThreshold),
+                      },
+                    }));
+                  }}
                   className="w-full accent-yellow-500"
                 />
                 <p className="text-sm text-gray-500 mt-1">
@@ -496,10 +504,18 @@ export default function OnboardingPage() {
                   min="40"
                   max="80"
                   value={settings.detection.quarantineThreshold}
-                  onChange={(e) => setSettings(prev => ({
-                    ...prev,
-                    detection: { ...prev.detection, quarantineThreshold: parseInt(e.target.value) },
-                  }))}
+                  onChange={(e) => {
+                    const quarantine = parseInt(e.target.value);
+                    setSettings(prev => ({
+                      ...prev,
+                      detection: {
+                        ...prev.detection,
+                        suspiciousThreshold: Math.min(quarantine, prev.detection.suspiciousThreshold),
+                        quarantineThreshold: quarantine,
+                        blockThreshold: Math.max(quarantine, prev.detection.blockThreshold),
+                      },
+                    }));
+                  }}
                   className="w-full accent-orange-500"
                 />
                 <p className="text-sm text-gray-500 mt-1">
@@ -516,10 +532,18 @@ export default function OnboardingPage() {
                   min="60"
                   max="95"
                   value={settings.detection.blockThreshold}
-                  onChange={(e) => setSettings(prev => ({
-                    ...prev,
-                    detection: { ...prev.detection, blockThreshold: parseInt(e.target.value) },
-                  }))}
+                  onChange={(e) => {
+                    const block = parseInt(e.target.value);
+                    setSettings(prev => ({
+                      ...prev,
+                      detection: {
+                        ...prev.detection,
+                        suspiciousThreshold: Math.min(block, prev.detection.suspiciousThreshold),
+                        quarantineThreshold: Math.min(block, prev.detection.quarantineThreshold),
+                        blockThreshold: block,
+                      },
+                    }));
+                  }}
                   className="w-full accent-red-500"
                 />
                 <p className="text-sm text-gray-500 mt-1">

@@ -1,21 +1,19 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useTenant } from '@/lib/auth/tenant-context';
 import { useDashboardData } from '@/lib/hooks/use-dashboard-data';
 import { StatCard } from '@/components/dashboard/stat-card';
 import { IntegrationStatus } from '@/components/dashboard/integration-status';
 import { RecentThreats } from '@/components/dashboard/recent-threats';
 
-// Mock integrations - will be replaced when integrations are built
-const mockIntegrations = [
-  {
-    id: '1',
-    type: 'o365' as const,
-    name: 'Microsoft 365',
-    status: 'disconnected' as const,
-    lastSync: undefined,
-  },
-];
+type Integration = {
+  id: string;
+  type: 'o365' | 'gmail';
+  name: string;
+  status: 'connected' | 'disconnected' | 'error' | 'pending';
+  lastSync?: Date;
+};
 
 // Demo threats to show when no real data exists yet
 const demoThreats = [
@@ -48,6 +46,23 @@ const demoThreats = [
 export default function DashboardPage() {
   const { currentTenant } = useTenant();
   const { stats, threats, isLoading } = useDashboardData();
+  const [integrations, setIntegrations] = useState<Integration[]>([]);
+
+  useEffect(() => {
+    fetch('/api/integrations')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        const items = Array.isArray(data) ? data : data.integrations || [];
+        setIntegrations(items.map((i: Record<string, string>) => ({
+          id: i.id,
+          type: i.type as 'o365' | 'gmail',
+          name: i.type === 'gmail' ? 'Google Workspace' : 'Microsoft 365',
+          status: i.status as Integration['status'],
+          lastSync: i.last_sync_at ? new Date(i.last_sync_at) : undefined,
+        })));
+      })
+      .catch(() => setIntegrations([]));
+  }, []);
 
   // Use real stats if available, otherwise show zeros with demo message
   const displayStats = {
@@ -137,7 +152,7 @@ export default function DashboardPage() {
 
         {/* Integration Status - 1 column */}
         <div>
-          <IntegrationStatus integrations={mockIntegrations} />
+          <IntegrationStatus integrations={integrations} />
         </div>
       </div>
 
@@ -154,7 +169,7 @@ export default function DashboardPage() {
           <QuickAction
             title="Add Policy"
             description="Create allow/block rules"
-            href="/dashboard/policies/new"
+            href="/dashboard/policies"
             icon={PlusIcon}
           />
           <QuickAction

@@ -3,9 +3,14 @@ import type { Appearance } from "@clerk/types";
 import "./globals.css";
 import Script from "next/script";
 import localFont from "next/font/local";
-import { templateMetadata } from "./_template/content/metadata";
+import type { Metadata } from "next";
+import { Toaster } from "sonner";
 
-export const metadata = templateMetadata;
+export const metadata: Metadata = {
+  title: "Swordfish — AI Email Security",
+  description:
+    "AI-powered email security that protects SMBs and MSPs from phishing, BEC, and malicious attachments.",
+};
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -45,6 +50,7 @@ export default function RootLayout({
       <ClerkProvider appearance={clerkAppearanceObject}>
         <body className={`min-h-screen flex flex-col antialiased`}>
           {children}
+          <Toaster position="top-right" richColors closeButton />
         </body>
       </ClerkProvider>
 

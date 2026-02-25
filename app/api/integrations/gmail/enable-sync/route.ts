@@ -6,7 +6,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { sql } from '@/lib/db';
-import { getGmailAccessToken } from '@/lib/integrations/gmail';
+import { getAccessToken } from '@/lib/oauth';
 import { createGmailSubscription } from '@/lib/webhooks/subscriptions';
 
 export async function PATCH() {
@@ -21,7 +21,7 @@ export async function PATCH() {
 
     // Get Gmail integration
     const [integration] = await sql`
-      SELECT id, tenant_id, config, nango_connection_id, status
+      SELECT id, tenant_id, config, status
       FROM integrations
       WHERE tenant_id = ${tenantId} AND type = 'gmail'
     `;
@@ -32,10 +32,6 @@ export async function PATCH() {
 
     if (integration.status !== 'connected') {
       return NextResponse.json({ error: 'Integration not connected' }, { status: 400 });
-    }
-
-    if (!integration.nango_connection_id) {
-      return NextResponse.json({ error: 'No Nango connection ID' }, { status: 400 });
     }
 
     const result: any = {
@@ -65,7 +61,8 @@ export async function PATCH() {
     } else {
       result.steps.push('Registering Gmail push watch...');
       try {
-        const accessToken = await getGmailAccessToken(integration.nango_connection_id);
+        // Get fresh access token (auto-refreshes if expired)
+        const accessToken = await getAccessToken(tenantId, 'gmail');
         const subscription = await createGmailSubscription({
           integrationId: integration.id,
           tenantId: integration.tenant_id,

@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useTenant } from '@/lib/auth/tenant-context';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
+import Link from 'next/link';
 
 interface Threat {
   id: string;
@@ -30,14 +32,17 @@ interface ThreatStats {
   avgScore: number;
 }
 
+type BulkAction = 'release' | 'delete' | 'false_positive' | 'blocklist' | 'allowlist';
+
 export default function QuarantinePage() {
+  const { currentTenant } = useTenant();
   const [threats, setThreats] = useState<Threat[]>([]);
   const [stats, setStats] = useState<ThreatStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'quarantined' | 'released' | 'deleted' | 'all'>('quarantined');
   const [selectedThreats, setSelectedThreats] = useState<Set<string>>(new Set());
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
 
   const fetchThreats = useCallback(async () => {
     try {
@@ -47,6 +52,7 @@ export default function QuarantinePage() {
       setStats(data.stats);
     } catch (error) {
       console.error('Failed to fetch threats:', error);
+      toast.error('Failed to load quarantine data');
     } finally {
       setLoading(false);
     }
@@ -56,50 +62,89 @@ export default function QuarantinePage() {
     fetchThreats();
   }, [fetchThreats]);
 
-  async function releaseThreat(threatId: string, addToAllowlist: boolean = false) {
-    setActionLoading(threatId);
-    try {
-      await fetch(`/api/threats/${threatId}/release`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ addToAllowlist }),
-      });
-      setSelectedThreats(new Set());
-      await fetchThreats();
-    } catch (error) {
-      console.error('Failed to release threat:', error);
-    } finally {
-      setActionLoading(null);
-    }
-  }
-
-  async function deleteThreat(threatId: string) {
-    if (!confirm('Are you sure you want to permanently delete this email?')) {
+  async function handleAction(threatId: string, action: 'release' | 'delete' | 'false_positive' | 'blocklist' | 'allowlist') {
+    if (action === 'delete' && !confirm('Are you sure you want to permanently delete this email?')) {
       return;
     }
 
     setActionLoading(threatId);
     try {
-      await fetch(`/api/threats/${threatId}`, { method: 'DELETE' });
+      switch (action) {
+        case 'release': {
+          const res = await fetch(`/api/threats/${threatId}/release`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ addToAllowlist: false }),
+          });
+          if (!res.ok) throw new Error('Release failed');
+          toast.success('Email released from quarantine');
+          break;
+        }
+        case 'delete': {
+          const res = await fetch(`/api/threats/${threatId}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error('Delete failed');
+          toast.success('Email permanently deleted');
+          break;
+        }
+        case 'false_positive': {
+          const res = await fetch(`/api/threats/${threatId}/release`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ isFalsePositive: true, addToAllowlist: true }),
+          });
+          if (!res.ok) throw new Error('Report failed');
+          toast.success('Reported as false positive. Sender added to allowlist.');
+          break;
+        }
+        case 'blocklist': {
+          const res = await fetch('/api/threats/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'blocklist', threatIds: [threatId] }),
+          });
+          if (!res.ok) throw new Error('Blocklist failed');
+          toast.success('Sender added to blocklist');
+          break;
+        }
+        case 'allowlist': {
+          const res = await fetch(`/api/threats/${threatId}/release`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ addToAllowlist: true }),
+          });
+          if (!res.ok) throw new Error('Allowlist failed');
+          toast.success('Email released and sender added to allowlist');
+          break;
+        }
+      }
       setSelectedThreats(new Set());
       await fetchThreats();
     } catch (error) {
-      console.error('Failed to delete threat:', error);
+      toast.error(error instanceof Error ? error.message : `Action failed`);
     } finally {
       setActionLoading(null);
     }
   }
 
-  async function bulkAction(action: 'release' | 'delete') {
+  async function bulkAction(action: BulkAction) {
     if (selectedThreats.size === 0) return;
 
-    if (action === 'delete' && !confirm(`Are you sure you want to permanently delete ${selectedThreats.size} emails?`)) {
+    const labels: Record<BulkAction, string> = {
+      release: 'release',
+      delete: 'permanently delete',
+      false_positive: 'mark as false positive',
+      blocklist: 'add senders to blocklist for',
+      allowlist: 'add senders to allowlist for',
+    };
+
+    if (!confirm(`Are you sure you want to ${labels[action]} ${selectedThreats.size} email(s)?`)) {
       return;
     }
 
     setActionLoading('bulk');
+    setBulkMenuOpen(false);
     try {
-      await fetch('/api/threats/bulk', {
+      const res = await fetch('/api/threats/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -107,10 +152,17 @@ export default function QuarantinePage() {
           threatIds: Array.from(selectedThreats),
         }),
       });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Bulk action failed');
+      }
+
+      toast.success(`Successfully processed ${selectedThreats.size} email(s)`);
       setSelectedThreats(new Set());
       await fetchThreats();
     } catch (error) {
-      console.error(`Failed to ${action} threats:`, error);
+      toast.error(error instanceof Error ? error.message : 'Bulk action failed');
     } finally {
       setActionLoading(null);
     }
@@ -175,7 +227,7 @@ export default function QuarantinePage() {
       <div>
         <h1 className="text-2xl font-bold">Quarantine</h1>
         <p className="text-muted-foreground">
-          Review and manage quarantined emails. Release safe emails or permanently delete threats.
+          Manage quarantined emails: release, delete, report false positives, or update sender lists.
         </p>
       </div>
 
@@ -229,29 +281,59 @@ export default function QuarantinePage() {
         ))}
       </div>
 
-      {/* Controls */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between">
-        <div className="flex gap-2">
+      {/* Controls + Bulk Actions Bar */}
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+        <div className="flex gap-2 items-center">
           <Button variant="outline" onClick={() => fetchThreats()}>
             Refresh
           </Button>
+          {selectedThreats.size > 0 && (
+            <span className="text-sm text-muted-foreground ml-2">
+              {selectedThreats.size} selected
+            </span>
+          )}
         </div>
 
-        {selectedThreats.size > 0 && statusFilter === 'quarantined' && (
-          <div className="flex gap-2">
+        {selectedThreats.size > 0 && (
+          <div className="flex gap-2 flex-wrap relative">
             <Button
               variant="outline"
+              className="text-green-700 border-green-300 hover:bg-green-50"
               onClick={() => bulkAction('release')}
               disabled={actionLoading === 'bulk'}
             >
-              Release Selected ({selectedThreats.size})
+              Release ({selectedThreats.size})
+            </Button>
+            <Button
+              variant="outline"
+              className="text-yellow-700 border-yellow-300 hover:bg-yellow-50"
+              onClick={() => bulkAction('false_positive')}
+              disabled={actionLoading === 'bulk'}
+            >
+              False Positive ({selectedThreats.size})
+            </Button>
+            <Button
+              variant="outline"
+              className="text-orange-700 border-orange-300 hover:bg-orange-50"
+              onClick={() => bulkAction('blocklist')}
+              disabled={actionLoading === 'bulk'}
+            >
+              Blocklist ({selectedThreats.size})
+            </Button>
+            <Button
+              variant="outline"
+              className="text-blue-700 border-blue-300 hover:bg-blue-50"
+              onClick={() => bulkAction('allowlist')}
+              disabled={actionLoading === 'bulk'}
+            >
+              Allowlist ({selectedThreats.size})
             </Button>
             <Button
               variant="destructive"
               onClick={() => bulkAction('delete')}
               disabled={actionLoading === 'bulk'}
             >
-              Delete Selected ({selectedThreats.size})
+              Delete ({selectedThreats.size})
             </Button>
           </div>
         )}
@@ -260,11 +342,11 @@ export default function QuarantinePage() {
       {/* Threat List */}
       <Card>
         <CardHeader>
-          <CardTitle>Threats</CardTitle>
+          <CardTitle>Quarantined Emails</CardTitle>
           <CardDescription>
             {threats.length === 0
-              ? `No ${statusFilter === 'all' ? '' : statusFilter} threats`
-              : `Showing ${threats.length} ${statusFilter === 'all' ? '' : statusFilter} threats`}
+              ? `No ${statusFilter === 'all' ? '' : statusFilter} emails`
+              : `Showing ${threats.length} ${statusFilter === 'all' ? '' : statusFilter} email(s)`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -273,7 +355,7 @@ export default function QuarantinePage() {
               <div className="text-4xl mb-4">
                 {statusFilter === 'quarantined' ? '🛡️' : statusFilter === 'released' ? '✅' : '📭'}
               </div>
-              <p>No threats found</p>
+              <p>No emails found</p>
               <p className="text-sm mt-2">
                 Detected threats will appear here for review
               </p>
@@ -290,11 +372,12 @@ export default function QuarantinePage() {
                 />
                 <div className="flex-1 grid grid-cols-12 gap-4">
                   <div className="col-span-3">From</div>
-                  <div className="col-span-3">Subject</div>
+                  <div className="col-span-2">Subject</div>
                   <div className="col-span-1">Score</div>
-                  <div className="col-span-2">Status</div>
+                  <div className="col-span-1">Verdict</div>
+                  <div className="col-span-1">Status</div>
                   <div className="col-span-2">Date</div>
-                  <div className="col-span-1">Actions</div>
+                  <div className="col-span-2">Actions</div>
                 </div>
               </div>
 
@@ -315,12 +398,17 @@ export default function QuarantinePage() {
                   <div className="flex-1 grid grid-cols-12 gap-4 items-center">
                     <div className="col-span-3">
                       <p className="font-medium truncate">{threat.senderEmail}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-muted-foreground truncate">
                         To: {threat.recipientEmail}
                       </p>
                     </div>
-                    <div className="col-span-3 truncate" title={threat.subject}>
-                      {threat.subject}
+                    <div className="col-span-2 truncate" title={threat.subject}>
+                      <Link
+                        href={`/dashboard/threats/${threat.id}`}
+                        className="text-blue-600 hover:underline"
+                      >
+                        {threat.subject || '(No subject)'}
+                      </Link>
                     </div>
                     <div className="col-span-1">
                       <span
@@ -335,36 +423,56 @@ export default function QuarantinePage() {
                         {threat.score}
                       </span>
                     </div>
-                    <div className="col-span-2">
+                    <div className="col-span-1">
+                      {getVerdictBadge(threat.verdict, threat.score)}
+                    </div>
+                    <div className="col-span-1">
                       {getStatusBadge(threat.status)}
                     </div>
                     <div className="col-span-2 text-sm text-muted-foreground">
                       {formatDate(threat.quarantinedAt)}
                     </div>
-                    <div className="col-span-1 flex gap-1">
-                      {threat.status === 'quarantined' && (
-                        <>
+                    <div className="col-span-2">
+                      {threat.status === 'quarantined' ? (
+                        <div className="flex gap-1 flex-wrap">
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="text-green-600 hover:bg-green-50 px-2"
-                            onClick={() => releaseThreat(threat.id)}
+                            className="text-green-600 hover:bg-green-50 px-2 h-7 text-xs"
+                            onClick={() => handleAction(threat.id, 'release')}
                             disabled={actionLoading === threat.id}
-                            title="Release"
+                            title="Release email"
                           >
-                            ✓
+                            Release
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="text-red-600 hover:bg-red-50 px-2"
-                            onClick={() => deleteThreat(threat.id)}
+                            className="text-yellow-600 hover:bg-yellow-50 px-2 h-7 text-xs"
+                            onClick={() => handleAction(threat.id, 'false_positive')}
                             disabled={actionLoading === threat.id}
-                            title="Delete"
+                            title="Report false positive"
                           >
-                            ✕
+                            FP
                           </Button>
-                        </>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600 hover:bg-red-50 px-2 h-7 text-xs"
+                            onClick={() => handleAction(threat.id, 'delete')}
+                            disabled={actionLoading === threat.id}
+                            title="Delete permanently"
+                          >
+                            Del
+                          </Button>
+                        </div>
+                      ) : (
+                        <Link
+                          href={`/dashboard/threats/${threat.id}`}
+                          className="text-sm text-blue-600 hover:underline"
+                        >
+                          View Details
+                        </Link>
                       )}
                     </div>
                   </div>
@@ -372,6 +480,20 @@ export default function QuarantinePage() {
               ))}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Action Reference */}
+      <Card>
+        <CardContent className="pt-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Quick Reference</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm text-muted-foreground">
+            <div><span className="font-medium text-green-700">Release</span> -- Deliver email to the recipient inbox</div>
+            <div><span className="font-medium text-yellow-700">False Positive</span> -- Release + add sender to allowlist</div>
+            <div><span className="font-medium text-red-700">Delete</span> -- Permanently remove the email</div>
+            <div><span className="font-medium text-orange-700">Blocklist</span> -- Block all future email from this sender</div>
+            <div><span className="font-medium text-blue-700">Allowlist</span> -- Release + trust this sender going forward</div>
+          </div>
         </CardContent>
       </Card>
     </div>

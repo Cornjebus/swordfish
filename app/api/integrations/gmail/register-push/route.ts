@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { sql } from '@/lib/db';
-import { getGmailAccessToken } from '@/lib/integrations/gmail';
+import { getAccessToken } from '@/lib/oauth';
 import { createGmailSubscription } from '@/lib/webhooks/subscriptions';
 
 export async function POST(request: NextRequest) {
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
 
     // Get Gmail integration
     const integrations = await sql`
-      SELECT id, config, nango_connection_id
+      SELECT id, config
       FROM integrations
       WHERE tenant_id = ${tenantId}
       AND type = 'gmail'
@@ -44,7 +44,6 @@ export async function POST(request: NextRequest) {
     }
 
     const integration = integrations[0];
-    const nangoConnectionId = integration.nango_connection_id as string | null;
     const config = integration.config as {
       watchExpiration?: string;
     };
@@ -58,15 +57,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Get fresh token from Nango
-    if (!nangoConnectionId) {
-      return NextResponse.json(
-        { error: 'No Nango connection configured' },
-        { status: 500 }
-      );
-    }
-
-    const accessToken = await getGmailAccessToken(nangoConnectionId);
+    // Get fresh access token (auto-refreshes if expired)
+    const accessToken = await getAccessToken(tenantId, 'gmail');
 
     // Register push notifications
     const subscription = await createGmailSubscription({
