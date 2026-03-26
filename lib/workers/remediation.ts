@@ -850,14 +850,23 @@ export async function autoRemediate(params: {
       250
     );
 
-    // HIGH-2 FIX: First create/update threat record with 'remediation_pending' status
-    // This ensures we can track failures properly
+    // RACE CONDITION FIX: Use atomic UPDATE ... WHERE status NOT IN (...)
+    // to prevent multiple instances from remediating the same threat concurrently.
+    // Only one instance can transition from a non-terminal state to 'remediation_pending'.
+    //
+    // NOTE: If a remediation_locks table exists, prefer using it:
+    //   CREATE TABLE IF NOT EXISTS remediation_locks (
+    //     threat_id TEXT PRIMARY KEY,
+    //     locked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    //     locked_by TEXT NOT NULL
+    //   );
     const existingThreats = await sql`
-      SELECT id FROM threats WHERE tenant_id = ${tenantId} AND message_id = ${safeMessageId}
+      SELECT id, status FROM threats WHERE tenant_id = ${tenantId} AND message_id = ${safeMessageId}
     `;
 
     if (existingThreats.length > 0) {
-      await sql`
+      // Atomic claim: only update if not already being remediated or completed
+      const claimResult = await sql`
         UPDATE threats SET
           status = 'remediation_pending',
           verdict = ${verdict},
@@ -866,8 +875,27 @@ export async function autoRemediate(params: {
           external_message_id = COALESCE(external_message_id, ${safeExternalMessageId}),
           signals = ${JSON.stringify(emailDetails.signals || [])}::jsonb,
           updated_at = NOW()
-        WHERE tenant_id = ${tenantId} AND message_id = ${safeMessageId}
+        WHERE tenant_id = ${tenantId}
+          AND message_id = ${safeMessageId}
+          AND status NOT IN ('remediation_pending', 'quarantined', 'deleted', 'released')
+        RETURNING id
       `;
+
+      if (claimResult.length === 0) {
+        // Another instance already claimed this threat or it's in a terminal state
+        log.info('Skipping remediation — already claimed or completed', {
+          tenantId,
+          messageId,
+          currentStatus: existingThreats[0].status,
+        });
+        return {
+          success: true,
+          action: verdict === 'block' ? 'block' : 'quarantine',
+          messageId,
+          integrationId,
+          integrationType,
+        };
+      }
     } else {
       await sql`
         INSERT INTO threats (

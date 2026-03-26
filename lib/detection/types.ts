@@ -236,6 +236,7 @@ export type SignalType =
   | 'verified_bec_attack'
   | 'credential_harvesting'
   | 'trusted_sender_bypass'
+  | 'pipeline_timeout'
   | 'url';
 
 // Analysis result from each layer
@@ -308,6 +309,8 @@ export interface DetectionConfig {
   // Timeouts
   urlAnalysisTimeoutMs: number;
   sandboxTimeoutMs: number;
+  /** Overall pipeline timeout in ms. On timeout, returns a safe default verdict. */
+  pipelineTimeoutMs?: number;
 }
 
 export const DEFAULT_DETECTION_CONFIG: DetectionConfig = {

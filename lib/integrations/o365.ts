@@ -8,9 +8,22 @@
 
 import type { OAuthTokens } from './types';
 import { getAccessToken as getTokenFromManager } from '@/lib/oauth/token-manager';
+import { CircuitBreakerRegistry } from '@/lib/resilience/circuit-breaker';
 
 const MICROSOFT_AUTH_URL = 'https://login.microsoftonline.com';
 const GRAPH_API_URL = 'https://graph.microsoft.com/v1.0';
+
+/**
+ * Circuit breaker for Microsoft Graph API calls.
+ * Opens after 5 consecutive failures, resets after 30s.
+ */
+const o365BreakerRegistry = new CircuitBreakerRegistry();
+const o365Breaker = o365BreakerRegistry.getOrCreate('o365', {
+  failureThreshold: 5,
+  resetTimeout: 30000,
+  successThreshold: 2,
+  timeout: 30000,
+});
 
 /**
  * Get a fresh O365 access token
@@ -170,33 +183,35 @@ export async function getO365UserProfile(accessToken: string): Promise<{
   displayName: string;
   tenantId: string;
 }> {
-  const response = await fetch(`${GRAPH_API_URL}/me`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+  return o365Breaker.execute(async () => {
+    const response = await fetch(`${GRAPH_API_URL}/me`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to get user profile');
+    }
+
+    const data = await response.json();
+
+    // Get tenant ID from organization endpoint
+    const orgResponse = await fetch(`${GRAPH_API_URL}/organization`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    let tenantId = '';
+    if (orgResponse.ok) {
+      const orgData = await orgResponse.json();
+      tenantId = orgData.value?.[0]?.id || '';
+    }
+
+    return {
+      id: data.id,
+      email: data.mail || data.userPrincipalName,
+      displayName: data.displayName,
+      tenantId,
+    };
   });
-
-  if (!response.ok) {
-    throw new Error('Failed to get user profile');
-  }
-
-  const data = await response.json();
-
-  // Get tenant ID from organization endpoint
-  const orgResponse = await fetch(`${GRAPH_API_URL}/organization`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
-  let tenantId = '';
-  if (orgResponse.ok) {
-    const orgData = await orgResponse.json();
-    tenantId = orgData.value?.[0]?.id || '';
-  }
-
-  return {
-    id: data.id,
-    email: data.mail || data.userPrincipalName,
-    displayName: data.displayName,
-    tenantId,
-  };
 }
 
 /**
@@ -226,20 +241,22 @@ export async function listO365Emails(params: {
 
   const url = `${GRAPH_API_URL}/me/mailFolders/${folderId}/messages?${queryParams}`;
 
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+  return o365Breaker.execute(async () => {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to list emails');
+    }
+
+    const data = await response.json();
+
+    return {
+      emails: data.value,
+      nextLink: data['@odata.nextLink'] || null,
+    };
   });
-
-  if (!response.ok) {
-    throw new Error('Failed to list emails');
-  }
-
-  const data = await response.json();
-
-  return {
-    emails: data.value,
-    nextLink: data['@odata.nextLink'] || null,
-  };
 }
 
 /**
@@ -253,15 +270,17 @@ export async function getO365Email(params: {
 
   const url = `${GRAPH_API_URL}/me/messages/${messageId}?$select=id,internetMessageId,subject,from,toRecipients,ccRecipients,receivedDateTime,body,internetMessageHeaders,hasAttachments,attachments`;
 
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+  return o365Breaker.execute(async () => {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to get email');
+    }
+
+    return response.json();
   });
-
-  if (!response.ok) {
-    throw new Error('Failed to get email');
-  }
-
-  return response.json();
 }
 
 /**
@@ -274,18 +293,20 @@ export async function moveO365Email(params: {
 }): Promise<void> {
   const { accessToken, messageId, destinationFolderId } = params;
 
-  const response = await fetch(`${GRAPH_API_URL}/me/messages/${messageId}/move`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ destinationId: destinationFolderId }),
-  });
+  return o365Breaker.execute(async () => {
+    const response = await fetch(`${GRAPH_API_URL}/me/messages/${messageId}/move`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ destinationId: destinationFolderId }),
+    });
 
-  if (!response.ok) {
-    throw new Error('Failed to move email');
-  }
+    if (!response.ok) {
+      throw new Error('Failed to move email');
+    }
+  });
 }
 
 /**
@@ -301,32 +322,34 @@ export async function createO365Subscription(params: {
 
   const expirationDateTime = new Date(Date.now() + expirationMinutes * 60 * 1000);
 
-  const response = await fetch(`${GRAPH_API_URL}/subscriptions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      changeType: 'created',
-      notificationUrl,
-      resource: '/me/mailFolders/inbox/messages',
-      expirationDateTime: expirationDateTime.toISOString(),
-      clientState,
-    }),
+  return o365Breaker.execute(async () => {
+    const response = await fetch(`${GRAPH_API_URL}/subscriptions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        changeType: 'created',
+        notificationUrl,
+        resource: '/me/mailFolders/inbox/messages',
+        expirationDateTime: expirationDateTime.toISOString(),
+        clientState,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`Failed to create subscription: ${error.error?.message || 'Unknown error'}`);
+    }
+
+    const data = await response.json();
+
+    return {
+      subscriptionId: data.id,
+      expiresAt: new Date(data.expirationDateTime),
+    };
   });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(`Failed to create subscription: ${error.error?.message || 'Unknown error'}`);
-  }
-
-  const data = await response.json();
-
-  return {
-    subscriptionId: data.id,
-    expiresAt: new Date(data.expirationDateTime),
-  };
 }
 
 /**
@@ -341,22 +364,24 @@ export async function renewO365Subscription(params: {
 
   const expirationDateTime = new Date(Date.now() + expirationMinutes * 60 * 1000);
 
-  const response = await fetch(`${GRAPH_API_URL}/subscriptions/${subscriptionId}`, {
-    method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      expirationDateTime: expirationDateTime.toISOString(),
-    }),
+  return o365Breaker.execute(async () => {
+    const response = await fetch(`${GRAPH_API_URL}/subscriptions/${subscriptionId}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        expirationDateTime: expirationDateTime.toISOString(),
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to renew subscription');
+    }
+
+    return expirationDateTime;
   });
-
-  if (!response.ok) {
-    throw new Error('Failed to renew subscription');
-  }
-
-  return expirationDateTime;
 }
 
 /**
@@ -368,50 +393,54 @@ export async function deleteO365Subscription(params: {
 }): Promise<void> {
   const { accessToken, subscriptionId } = params;
 
-  const response = await fetch(`${GRAPH_API_URL}/subscriptions/${subscriptionId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  return o365Breaker.execute(async () => {
+    const response = await fetch(`${GRAPH_API_URL}/subscriptions/${subscriptionId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
 
-  if (!response.ok && response.status !== 404) {
-    throw new Error('Failed to delete subscription');
-  }
+    if (!response.ok && response.status !== 404) {
+      throw new Error('Failed to delete subscription');
+    }
+  });
 }
 
 /**
  * Create or get quarantine folder
  */
 export async function getOrCreateQuarantineFolder(accessToken: string): Promise<string> {
-  // First try to find existing folder
-  const listResponse = await fetch(
-    `${GRAPH_API_URL}/me/mailFolders?$filter=displayName eq 'Swordfish Quarantine'`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
+  return o365Breaker.execute(async () => {
+    // First try to find existing folder
+    const listResponse = await fetch(
+      `${GRAPH_API_URL}/me/mailFolders?$filter=displayName eq 'Swordfish Quarantine'`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
 
-  if (listResponse.ok) {
-    const data = await listResponse.json();
-    if (data.value?.length > 0) {
-      return data.value[0].id;
+    if (listResponse.ok) {
+      const data = await listResponse.json();
+      if (data.value?.length > 0) {
+        return data.value[0].id;
+      }
     }
-  }
 
-  // Create new folder
-  const createResponse = await fetch(`${GRAPH_API_URL}/me/mailFolders`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      displayName: 'Swordfish Quarantine',
-      isHidden: false,
-    }),
+    // Create new folder
+    const createResponse = await fetch(`${GRAPH_API_URL}/me/mailFolders`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        displayName: 'Swordfish Quarantine',
+        isHidden: false,
+      }),
+    });
+
+    if (!createResponse.ok) {
+      throw new Error('Failed to create quarantine folder');
+    }
+
+    const folder = await createResponse.json();
+    return folder.id;
   });
-
-  if (!createResponse.ok) {
-    throw new Error('Failed to create quarantine folder');
-  }
-
-  const folder = await createResponse.json();
-  return folder.id;
 }

@@ -8,10 +8,23 @@
 
 import type { OAuthTokens } from './types';
 import { getAccessToken as getTokenFromManager } from '@/lib/oauth/token-manager';
+import { CircuitBreakerRegistry } from '@/lib/resilience/circuit-breaker';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GMAIL_API_URL = 'https://gmail.googleapis.com/gmail/v1';
+
+/**
+ * Circuit breaker for Gmail API calls.
+ * Opens after 5 consecutive failures, resets after 30s.
+ */
+const gmailBreakerRegistry = new CircuitBreakerRegistry();
+const gmailBreaker = gmailBreakerRegistry.getOrCreate('gmail', {
+  failureThreshold: 5,
+  resetTimeout: 30000,
+  successThreshold: 2,
+  timeout: 30000,
+});
 
 /**
  * Retry configuration for Gmail API calls
@@ -36,67 +49,72 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Fetch wrapper with retry logic for rate limiting (429) and server errors (5xx)
+ * Fetch wrapper with retry logic for rate limiting (429) and server errors (5xx).
+ * All calls are routed through the Gmail circuit breaker to prevent cascading
+ * failures when the Gmail API is degraded or down.
  */
 async function gmailFetchWithRetry(
   url: string,
   options: RequestInit,
   config: RetryConfig = {}
 ): Promise<Response> {
-  const { maxRetries, baseDelayMs, maxDelayMs } = { ...DEFAULT_RETRY_CONFIG, ...config };
-  let lastError: Error | null = null;
+  return gmailBreaker.execute(async () => {
+    const { maxRetries, baseDelayMs, maxDelayMs } = { ...DEFAULT_RETRY_CONFIG, ...config };
+    let lastError: Error | null = null;
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const response = await fetch(url, options);
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(url, options);
 
-      // Success or client error (not retryable)
-      if (response.ok || (response.status >= 400 && response.status < 429)) {
-        return response;
-      }
-
-      // Rate limiting - respect Retry-After header if present
-      if (response.status === 429) {
-        if (attempt >= maxRetries) {
-          return response; // Return the 429 after max retries
+        // Success or client error (not retryable)
+        if (response.ok || (response.status >= 400 && response.status < 429)) {
+          return response;
         }
 
-        const retryAfter = response.headers.get('Retry-After');
-        const delayMs = retryAfter
-          ? parseInt(retryAfter, 10) * 1000
-          : Math.min(baseDelayMs * Math.pow(2, attempt), maxDelayMs);
+        // Rate limiting - respect Retry-After header if present
+        if (response.status === 429) {
+          if (attempt >= maxRetries) {
+            return response; // Return the 429 after max retries
+          }
 
-        await sleep(delayMs);
-        continue;
-      }
+          const retryAfter = response.headers.get('Retry-After');
+          const delayMs = retryAfter
+            ? parseInt(retryAfter, 10) * 1000
+            : Math.min(baseDelayMs * Math.pow(2, attempt), maxDelayMs);
 
-      // Server errors (5xx) - retry with exponential backoff
-      if (response.status >= 500) {
+          await sleep(delayMs);
+          continue;
+        }
+
+        // Server errors (5xx) - retry with exponential backoff
+        if (response.status >= 500) {
+          if (attempt >= maxRetries) {
+            // Throw so the circuit breaker records the failure
+            throw new Error(`Gmail API server error: ${response.status}`);
+          }
+
+          const delayMs = Math.min(baseDelayMs * Math.pow(2, attempt), maxDelayMs);
+          await sleep(delayMs);
+          continue;
+        }
+
+        // Other errors (401, 403, etc.) - don't retry
+        return response;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        // Network errors - retry with backoff
         if (attempt >= maxRetries) {
-          return response;
+          throw lastError;
         }
 
         const delayMs = Math.min(baseDelayMs * Math.pow(2, attempt), maxDelayMs);
         await sleep(delayMs);
-        continue;
       }
-
-      // Other errors (401, 403, etc.) - don't retry
-      return response;
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-
-      // Network errors - retry with backoff
-      if (attempt >= maxRetries) {
-        throw lastError;
-      }
-
-      const delayMs = Math.min(baseDelayMs * Math.pow(2, attempt), maxDelayMs);
-      await sleep(delayMs);
     }
-  }
 
-  throw lastError || new Error('Max retries exceeded');
+    throw lastError || new Error('Max retries exceeded');
+  });
 }
 
 /**
@@ -291,21 +309,23 @@ export async function getGmailUserProfile(accessToken: string): Promise<{
   messagesTotal: number;
   historyId: string;
 }> {
-  const response = await fetch(`${GMAIL_API_URL}/users/me/profile`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+  return gmailBreaker.execute(async () => {
+    const response = await fetch(`${GMAIL_API_URL}/users/me/profile`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to get Gmail profile');
+    }
+
+    const data = await response.json();
+
+    return {
+      email: data.emailAddress,
+      messagesTotal: data.messagesTotal,
+      historyId: data.historyId,
+    };
   });
-
-  if (!response.ok) {
-    throw new Error('Failed to get Gmail profile');
-  }
-
-  const data = await response.json();
-
-  return {
-    email: data.emailAddress,
-    messagesTotal: data.messagesTotal,
-    historyId: data.historyId,
-  };
 }
 
 /**
@@ -332,22 +352,24 @@ export async function listGmailMessages(params: {
   if (pageToken) queryParams.set('pageToken', pageToken);
   if (labelIds?.length) queryParams.set('labelIds', labelIds.join(','));
 
-  const response = await fetch(
-    `${GMAIL_API_URL}/users/me/messages?${queryParams}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
+  return gmailBreaker.execute(async () => {
+    const response = await fetch(
+      `${GMAIL_API_URL}/users/me/messages?${queryParams}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
 
-  if (!response.ok) {
-    throw new Error('Failed to list messages');
-  }
+    if (!response.ok) {
+      throw new Error('Failed to list messages');
+    }
 
-  const data = await response.json();
+    const data = await response.json();
 
-  return {
-    messages: data.messages || [],
-    nextPageToken: data.nextPageToken || null,
-    resultSizeEstimate: data.resultSizeEstimate || 0,
-  };
+    return {
+      messages: data.messages || [],
+      nextPageToken: data.nextPageToken || null,
+      resultSizeEstimate: data.resultSizeEstimate || 0,
+    };
+  });
 }
 
 /**
@@ -360,16 +382,18 @@ export async function getGmailMessage(params: {
 }): Promise<Record<string, unknown>> {
   const { accessToken, messageId, format = 'full' } = params;
 
-  const response = await fetch(
-    `${GMAIL_API_URL}/users/me/messages/${messageId}?format=${format}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
+  return gmailBreaker.execute(async () => {
+    const response = await fetch(
+      `${GMAIL_API_URL}/users/me/messages/${messageId}?format=${format}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
 
-  if (!response.ok) {
-    throw new Error('Failed to get message');
-  }
+    if (!response.ok) {
+      throw new Error('Failed to get message');
+    }
 
-  return response.json();
+    return response.json();
+  });
 }
 
 /**
@@ -558,42 +582,46 @@ export async function watchGmailInbox(params: {
 }): Promise<{ historyId: string; expiration: Date }> {
   const { accessToken, topicName, labelIds = ['INBOX'] } = params;
 
-  const response = await fetch(`${GMAIL_API_URL}/users/me/watch`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      topicName,
-      labelIds,
-    }),
+  return gmailBreaker.execute(async () => {
+    const response = await fetch(`${GMAIL_API_URL}/users/me/watch`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        topicName,
+        labelIds,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to setup watch');
+    }
+
+    const data = await response.json();
+
+    return {
+      historyId: data.historyId,
+      expiration: new Date(parseInt(data.expiration)),
+    };
   });
-
-  if (!response.ok) {
-    throw new Error('Failed to setup watch');
-  }
-
-  const data = await response.json();
-
-  return {
-    historyId: data.historyId,
-    expiration: new Date(parseInt(data.expiration)),
-  };
 }
 
 /**
  * Stop push notifications
  */
 export async function stopGmailWatch(accessToken: string): Promise<void> {
-  const response = await fetch(`${GMAIL_API_URL}/users/me/stop`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  return gmailBreaker.execute(async () => {
+    const response = await fetch(`${GMAIL_API_URL}/users/me/stop`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
 
-  if (!response.ok && response.status !== 404) {
-    throw new Error('Failed to stop watch');
-  }
+    if (!response.ok && response.status !== 404) {
+      throw new Error('Failed to stop watch');
+    }
+  });
 }
 
 /**
@@ -626,24 +654,26 @@ export async function getGmailHistory(params: {
   if (labelId) queryParams.set('labelId', labelId);
   if (pageToken) queryParams.set('pageToken', pageToken);
 
-  const response = await fetch(
-    `${GMAIL_API_URL}/users/me/history?${queryParams}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
+  return gmailBreaker.execute(async () => {
+    const response = await fetch(
+      `${GMAIL_API_URL}/users/me/history?${queryParams}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
 
-  if (!response.ok) {
-    if (response.status === 404) {
-      // History too old, need full sync
-      return { history: [], historyId: startHistoryId, nextPageToken: null };
+    if (!response.ok) {
+      if (response.status === 404) {
+        // History too old, need full sync
+        return { history: [], historyId: startHistoryId, nextPageToken: null };
+      }
+      throw new Error('Failed to get history');
     }
-    throw new Error('Failed to get history');
-  }
 
-  const data = await response.json();
+    const data = await response.json();
 
-  return {
-    history: data.history || [],
-    historyId: data.historyId,
-    nextPageToken: data.nextPageToken || null,
-  };
+    return {
+      history: data.history || [],
+      historyId: data.historyId,
+      nextPageToken: data.nextPageToken || null,
+    };
+  });
 }
