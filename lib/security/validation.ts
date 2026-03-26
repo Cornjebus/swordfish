@@ -4,6 +4,8 @@
  * Input validation, sanitization, and security controls
  */
 
+import DOMPurify from 'isomorphic-dompurify';
+
 export class ValidationError extends Error {
   details: Record<string, unknown>;
 
@@ -163,84 +165,17 @@ export function validatePagination(params: PaginationParams): PaginationParams {
   };
 }
 
-// Dangerous HTML tags
-const DANGEROUS_TAGS = [
-  'script', 'iframe', 'object', 'embed', 'form', 'input',
-  'button', 'select', 'textarea', 'style', 'link', 'meta',
-  'base', 'applet', 'frame', 'frameset', 'layer',
-];
-
-// Dangerous attributes
-const DANGEROUS_ATTRS = [
-  'onclick', 'ondblclick', 'onmousedown', 'onmouseup', 'onmouseover',
-  'onmousemove', 'onmouseout', 'onkeypress', 'onkeydown', 'onkeyup',
-  'onfocus', 'onblur', 'onchange', 'onsubmit', 'onreset', 'onselect',
-  'onerror', 'onload', 'onunload', 'onabort', 'onresize', 'onscroll',
-  'href', 'src', 'action', 'formaction', 'data',
-];
-
-interface HtmlSanitizationOptions {
-  decodeEntities?: boolean;
-}
-
 /**
- * Sanitize HTML to prevent XSS
+ * Sanitize HTML to prevent XSS using DOMPurify.
+ * Strips ALL tags and attributes for maximum safety.
  */
-export function sanitizeHtml(input: string, options: HtmlSanitizationOptions = {}): string {
+export function sanitizeHtml(input: string): string {
   if (!input) return '';
 
-  let html = input;
-
-  // Decode entities if requested (to catch encoded XSS)
-  if (options.decodeEntities) {
-    html = decodeHtmlEntities(html);
-    html = decodeURIComponentSafe(html);
-  }
-
-  // Remove dangerous tags
-  for (const tag of DANGEROUS_TAGS) {
-    const tagRegex = new RegExp(`<${tag}[^>]*>.*?</${tag}>|<${tag}[^>]*/>|<${tag}[^>]*>`, 'gis');
-    html = html.replace(tagRegex, '');
-  }
-
-  // Remove dangerous attributes
-  for (const attr of DANGEROUS_ATTRS) {
-    const attrRegex = new RegExp(`\\s*${attr}\\s*=\\s*["'][^"']*["']|\\s*${attr}\\s*=\\s*[^\\s>]+`, 'gi');
-    html = html.replace(attrRegex, '');
-  }
-
-  // Remove javascript: and data: URLs
-  html = html.replace(/javascript:[^"']*/gi, '');
-  html = html.replace(/data:[^"']*/gi, '');
-
-  return html;
-}
-
-function decodeHtmlEntities(html: string): string {
-  const entities: Record<string, string> = {
-    '&lt;': '<',
-    '&gt;': '>',
-    '&amp;': '&',
-    '&quot;': '"',
-    '&#60;': '<',
-    '&#62;': '>',
-    '&#38;': '&',
-    '&#34;': '"',
-  };
-
-  let result = html;
-  for (const [entity, char] of Object.entries(entities)) {
-    result = result.replace(new RegExp(entity, 'g'), char);
-  }
-  return result;
-}
-
-function decodeURIComponentSafe(str: string): string {
-  try {
-    return decodeURIComponent(str);
-  } catch {
-    return str;
-  }
+  return DOMPurify.sanitize(input, {
+    ALLOWED_TAGS: [],
+    ALLOWED_ATTR: [],
+  });
 }
 
 interface InputSanitizationOptions {

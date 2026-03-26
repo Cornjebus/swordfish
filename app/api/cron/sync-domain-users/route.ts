@@ -7,6 +7,7 @@
  * Schedule: Every 6 hours
  */
 
+import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getActiveDomainConfigs, getUsersWithExpiringWebhooks, updateDomainUserSyncState } from '@/lib/integrations/domain-wide/storage';
 import { syncGoogleWorkspaceUsers, setupGmailWatchForAllUsers, getGmailTokenForUser } from '@/lib/integrations/domain-wide/google-workspace';
@@ -17,9 +18,10 @@ export const maxDuration = 300; // 5 minutes max
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  // Verify cron secret
-  const cronSecret = request.headers.get('authorization')?.replace('Bearer ', '');
-  if (cronSecret !== process.env.CRON_SECRET) {
+  // Verify cron secret with timing-safe comparison
+  const cronSecret = request.headers.get('authorization')?.replace('Bearer ', '') ?? '';
+  const expected = process.env.CRON_SECRET ?? '';
+  if (!expected || !cronSecret || !crypto.timingSafeEqual(Buffer.from(cronSecret), Buffer.from(expected))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

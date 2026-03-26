@@ -41,7 +41,10 @@ export async function GET() {
       isMspOrg = mspOrgs.length > 0;
     }
 
-    const hasAccess = isOrgAdmin || isMspUser || isDbAdmin || isMspOrg;
+    // Require BOTH a Clerk-level check AND a DB-level check to pass
+    const hasClerkAccess = isOrgAdmin;
+    const hasDbAccess = isMspUser || isDbAdmin || isMspOrg;
+    const hasAccess = hasClerkAccess && hasDbAccess;
 
     if (!hasAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

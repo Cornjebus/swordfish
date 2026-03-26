@@ -3,6 +3,7 @@
  * Runs every 5 minutes to sync emails from connected providers
  */
 
+import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import { syncIntegration, type SyncResult } from '@/lib/workers/email-sync';
@@ -27,9 +28,10 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    // Verify cron secret
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    // Verify cron secret with timing-safe comparison
+    const cronSecret = request.headers.get('authorization')?.replace('Bearer ', '') ?? '';
+    const expected = process.env.CRON_SECRET ?? '';
+    if (!expected || !cronSecret || !crypto.timingSafeEqual(Buffer.from(cronSecret), Buffer.from(expected))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
