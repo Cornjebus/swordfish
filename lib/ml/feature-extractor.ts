@@ -1024,9 +1024,9 @@ export class FeatureExtractor {
     const vipResult = await this.checkVIPImpersonation(fromAddress, displayName, tenantId);
 
     // Check contact history (would integrate with FirstContactDetector)
-    let isFirstContact = true;
-    let priorContactCount = 0;
-    let communicationFrequency = 0;
+    const isFirstContact = true;
+    const priorContactCount = 0;
+    const communicationFrequency = 0;
 
     try {
       const { FirstContactDetector } = await import('@/lib/behavioral/first-contact');
@@ -1197,7 +1197,7 @@ export class FeatureExtractor {
     const mismatchedFiles: string[] = [];
 
     let totalSize = 0;
-    let maxArchiveDepth = 0;
+    const maxArchiveDepth = 0;
     let hasDoubleExtension = false;
 
     for (const attachment of attachments) {
@@ -1312,12 +1312,12 @@ export class FeatureExtractor {
     // Default values when behavioral data unavailable
     let sendTimeAnomalyScore = 0;
     let hourProbability = 0.0416; // 1/24 uniform distribution
-    let recipientAnomalyScore = 0;
-    let newRecipientCount = 0;
-    let newDomainCount = 0;
-    let volumeAnomalyScore = 0;
-    let volumeZScore = 0;
-    let subjectDeviationScore = 0;
+    const recipientAnomalyScore = 0;
+    const newRecipientCount = 0;
+    const newDomainCount = 0;
+    const volumeAnomalyScore = 0;
+    const volumeZScore = 0;
+    const subjectDeviationScore = 0;
 
     try {
       // Try to get behavioral analysis from AnomalyDetector
@@ -1434,7 +1434,7 @@ export class FeatureExtractor {
 
   private cleanIPAddress(ip: string): string {
     // Remove brackets and whitespace
-    return ip.replace(/[\[\]\s]/g, '');
+    return ip.replace(/[[\]\s]/g, '');
   }
 
   private isSuspiciousMailer(mailer: string | string[] | undefined): boolean {

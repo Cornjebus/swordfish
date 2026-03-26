@@ -243,7 +243,7 @@ export class InputValidator {
   ];
 
   private pathPatterns = [
-    /\.\.[\/\\]/,
+    /\.\.[/\\]/,
     /\.\.%2f/i,
     /\.\.%5c/i,
     /%00/,
@@ -671,7 +671,7 @@ export class RateLimitTester {
 
   async testBypassAttempts(options: BypassOptions): Promise<BypassResult> {
     const findings: string[] = [];
-    let bypassable = false;
+    const bypassable = false;
 
     // Simulate bypass attempts
     for (const technique of options.bypassTechniques) {

@@ -248,7 +248,7 @@ export function generateDeviceAlert(
   const isKnownTrusted = existingDevice?.status === 'approved';
 
   let severity: Alert['severity'] = 'medium';
-  let type: Alert['type'] = 'new_device';
+  const type: Alert['type'] = 'new_device';
 
   if (isKnownTrusted) {
     severity = 'info' as Alert['severity']; // Safe return

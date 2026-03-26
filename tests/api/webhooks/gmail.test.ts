@@ -482,8 +482,10 @@ describe('Gmail Webhook API', () => {
 
       const response = await POST(request);
 
-      // Should return 200 to prevent Gmail from retrying aggressively
-      expect(response.status).toBe(200);
+      // Sprint 3: Now returns 503 with Retry-After so Google Pub/Sub uses
+      // exponential backoff instead of silently dropping the notification.
+      expect(response.status).toBe(503);
+      expect(response.headers.get('Retry-After')).toBe('30');
       const data = await response.json();
       expect(data.status).toBe('db_backpressure');
     });

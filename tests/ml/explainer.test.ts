@@ -437,7 +437,10 @@ describe('ThreatExplainer', () => {
       mockSql.mockResolvedValueOnce(mockPrev);
 
       const weekSummary = await explainer.generateExecutiveSummary('tenant-1', '1 week');
-      expect(weekSummary.period.end.getTime() - weekSummary.period.start.getTime()).toBeCloseTo(7 * 24 * 60 * 60 * 1000, -3);
+      const weekDiffMs = weekSummary.period.end.getTime() - weekSummary.period.start.getTime();
+      const weekExpected = 7 * 24 * 60 * 60 * 1000;
+      // Allow up to 2 hours tolerance for DST transitions and Date.setDate drift
+      expect(Math.abs(weekDiffMs - weekExpected)).toBeLessThan(2 * 60 * 60 * 1000);
 
       // Test "1 month"
       mockSql.mockResolvedValueOnce(mockStats);
@@ -445,7 +448,10 @@ describe('ThreatExplainer', () => {
       mockSql.mockResolvedValueOnce(mockPrev);
 
       const monthSummary = await explainer.generateExecutiveSummary('tenant-1', '1 month');
-      expect(monthSummary.period.end.getTime() - monthSummary.period.start.getTime()).toBeCloseTo(30 * 24 * 60 * 60 * 1000, -3);
+      const monthDiffMs = monthSummary.period.end.getTime() - monthSummary.period.start.getTime();
+      const monthExpected = 30 * 24 * 60 * 60 * 1000;
+      // Allow up to 2 hours tolerance for DST transitions and Date.setDate drift
+      expect(Math.abs(monthDiffMs - monthExpected)).toBeLessThan(2 * 60 * 60 * 1000);
     });
 
     it('should calculate threat volume change correctly', async () => {

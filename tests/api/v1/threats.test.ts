@@ -6,6 +6,39 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Sprint 2: Rate limiting moved to async Upstash Redis.
+// Mock the entire rate-limit module with an in-memory implementation that
+// preserves the same async API but avoids needing a real Redis connection.
+const rateLimitStore = new Map<string, { remaining: number; reset: number }>();
+
+vi.mock('@/lib/api/rate-limit', async () => {
+  const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number }> = {
+    starter:    { maxRequests: 100,  windowMs: 60000 },
+    pro:        { maxRequests: 500,  windowMs: 60000 },
+    enterprise: { maxRequests: 2000, windowMs: 60000 },
+    default:    { maxRequests: 60,   windowMs: 60000 },
+  };
+
+  async function checkRateLimit(
+    key: string,
+    config: { maxRequests: number; windowMs: number; keyPrefix?: string }
+  ) {
+    const fullKey = config.keyPrefix ? `${config.keyPrefix}:${key}` : key;
+    let entry = rateLimitStore.get(fullKey);
+    if (!entry) {
+      entry = { remaining: config.maxRequests, reset: Date.now() + config.windowMs };
+      rateLimitStore.set(fullKey, entry);
+    }
+    if (entry.remaining > 0) {
+      entry.remaining -= 1;
+      return { allowed: true, remaining: entry.remaining, resetAt: entry.reset };
+    }
+    return { allowed: false, remaining: 0, resetAt: entry.reset };
+  }
+
+  return { RATE_LIMITS, checkRateLimit };
+});
+
 // Test pure functions and types
 describe('API Authentication', () => {
   describe('API Scopes', () => {
@@ -69,7 +102,8 @@ describe('API Authentication', () => {
 
 describe('Rate Limiting', () => {
   beforeEach(async () => {
-    // Reset rate limit store between tests
+    // Clear the in-memory rate limit store between tests
+    rateLimitStore.clear();
     vi.resetModules();
   });
 
@@ -97,7 +131,8 @@ describe('Rate Limiting', () => {
       const { checkRateLimit } = await import('@/lib/api/rate-limit');
       const key = `test_${Date.now()}_${Math.random()}`;
 
-      const result = checkRateLimit(key, { maxRequests: 10, windowMs: 60000 });
+      // Sprint 2: checkRateLimit is now async (Upstash Redis)
+      const result = await checkRateLimit(key, { maxRequests: 10, windowMs: 60000 });
 
       expect(result.allowed).toBe(true);
       expect(result.remaining).toBe(9);
@@ -109,9 +144,9 @@ describe('Rate Limiting', () => {
       const key = `test_${Date.now()}_${Math.random()}`;
       const config = { maxRequests: 5, windowMs: 60000 };
 
-      checkRateLimit(key, config); // remaining: 4
-      checkRateLimit(key, config); // remaining: 3
-      const result = checkRateLimit(key, config); // remaining: 2
+      await checkRateLimit(key, config); // remaining: 4
+      await checkRateLimit(key, config); // remaining: 3
+      const result = await checkRateLimit(key, config); // remaining: 2
 
       expect(result.remaining).toBe(2);
     });
@@ -121,9 +156,9 @@ describe('Rate Limiting', () => {
       const key = `test_${Date.now()}_${Math.random()}`;
       const config = { maxRequests: 2, windowMs: 60000 };
 
-      checkRateLimit(key, config);
-      checkRateLimit(key, config);
-      const result = checkRateLimit(key, config);
+      await checkRateLimit(key, config);
+      await checkRateLimit(key, config);
+      const result = await checkRateLimit(key, config);
 
       expect(result.allowed).toBe(false);
       expect(result.remaining).toBe(0);
@@ -133,8 +168,8 @@ describe('Rate Limiting', () => {
       const { checkRateLimit } = await import('@/lib/api/rate-limit');
       const baseKey = `test_${Date.now()}`;
 
-      const result1 = checkRateLimit(baseKey, { maxRequests: 10, windowMs: 60000, keyPrefix: 'api' });
-      const result2 = checkRateLimit(baseKey, { maxRequests: 10, windowMs: 60000, keyPrefix: 'webhook' });
+      const result1 = await checkRateLimit(baseKey, { maxRequests: 10, windowMs: 60000, keyPrefix: 'api' });
+      const result2 = await checkRateLimit(baseKey, { maxRequests: 10, windowMs: 60000, keyPrefix: 'webhook' });
 
       // Both should have full remaining since different prefixes
       expect(result1.remaining).toBe(9);

@@ -256,6 +256,7 @@ export class ProductionDNSResolver implements DNSResolver {
       // Dynamic import for Node.js
       if (typeof process !== 'undefined' && process.versions?.node) {
         // This will be resolved at build time or runtime
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         this.dnsModule = require('dns');
       }
     } catch {

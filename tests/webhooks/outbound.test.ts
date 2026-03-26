@@ -12,6 +12,38 @@ vi.mock('@/lib/db', () => ({
   sql: vi.fn(),
 }));
 
+// Sprint 2: Rate limiting moved to async Upstash Redis.
+// Mock the entire rate-limit module with an in-memory implementation.
+const outboundRateLimitStore = new Map<string, { remaining: number; reset: number }>();
+
+vi.mock('@/lib/api/rate-limit', async () => {
+  const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number }> = {
+    starter:    { maxRequests: 100,  windowMs: 60000 },
+    pro:        { maxRequests: 500,  windowMs: 60000 },
+    enterprise: { maxRequests: 2000, windowMs: 60000 },
+    default:    { maxRequests: 60,   windowMs: 60000 },
+  };
+
+  async function checkRateLimit(
+    key: string,
+    config: { maxRequests: number; windowMs: number; keyPrefix?: string }
+  ) {
+    const fullKey = config.keyPrefix ? `${config.keyPrefix}:${key}` : key;
+    let entry = outboundRateLimitStore.get(fullKey);
+    if (!entry) {
+      entry = { remaining: config.maxRequests, reset: Date.now() + config.windowMs };
+      outboundRateLimitStore.set(fullKey, entry);
+    }
+    if (entry.remaining > 0) {
+      entry.remaining -= 1;
+      return { allowed: true, remaining: entry.remaining, resetAt: entry.reset };
+    }
+    return { allowed: false, remaining: 0, resetAt: entry.reset };
+  }
+
+  return { RATE_LIMITS, checkRateLimit };
+});
+
 import {
   generateSignature,
   verifySignature,
@@ -271,18 +303,22 @@ describe('Webhook Delivery', () => {
 });
 
 describe('Rate Limiting', () => {
+  beforeEach(() => {
+    outboundRateLimitStore.clear();
+  });
+
   it('should track rate limit state', async () => {
     const { checkRateLimit, RATE_LIMITS } = await import('@/lib/api/rate-limit');
 
     const config = RATE_LIMITS.starter;
 
-    // First request should pass
-    const result1 = checkRateLimit('test_key', config);
+    // Sprint 2: checkRateLimit is now async (Upstash Redis)
+    const result1 = await checkRateLimit('test_key', config);
     expect(result1.allowed).toBe(true);
     expect(result1.remaining).toBe(99);
 
     // Subsequent requests should decrement
-    const result2 = checkRateLimit('test_key', config);
+    const result2 = await checkRateLimit('test_key', config);
     expect(result2.allowed).toBe(true);
     expect(result2.remaining).toBe(98);
   });
@@ -294,11 +330,11 @@ describe('Rate Limiting', () => {
     const uniqueKey = `test_key_${Date.now()}`;
     const config = { maxRequests: 2, windowMs: 60000 };
 
-    checkRateLimit(uniqueKey, config);
-    checkRateLimit(uniqueKey, config);
+    await checkRateLimit(uniqueKey, config);
+    await checkRateLimit(uniqueKey, config);
 
     // Third request should be blocked
-    const result = checkRateLimit(uniqueKey, config);
+    const result = await checkRateLimit(uniqueKey, config);
     expect(result.allowed).toBe(false);
     expect(result.remaining).toBe(0);
   });

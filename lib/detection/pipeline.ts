@@ -154,7 +154,7 @@ async function analyzeEmailInternal(
   ]);
 
   // Process classification result
-  let emailClassification: EmailClassification | null = classificationResult;
+  const emailClassification: EmailClassification | null = classificationResult;
   if (emailClassification) {
     if (emailClassification.isKnownSender) {
       allSignals.push({
@@ -414,7 +414,9 @@ async function analyzeEmailInternal(
   // ============================================================================
 
   // Calculate final score and verdict
-  let { overallScore, confidence } = calculateFinalScore(layerResults, config);
+  const finalScore = calculateFinalScore(layerResults, config);
+  let { overallScore } = finalScore;
+  const { confidence } = finalScore;
 
   // Phase 5: Apply learned rules from user feedback
   let appliedRules: LearnedRule[] = [];

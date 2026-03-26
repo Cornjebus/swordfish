@@ -275,6 +275,7 @@ export function detectLookalikeDomain(domain: string): LookalikeResult {
   }
 
   // Check for internationalized domain name
+  // eslint-disable-next-line no-control-regex
   if (/[^\x00-\x7F]/.test(domain) || domain.includes('xn--')) {
     signals.push('internationalized_domain');
 
@@ -614,7 +615,7 @@ export function detectURLObfuscation(url: string): ObfuscationResult {
   }
 
   // Check for credential prefix attack (user@host)
-  const credentialMatch = url.match(/https?:\/\/([^@]+)@([^\/]+)/);
+  const credentialMatch = url.match(/https?:\/\/([^@]+)@([^/]+)/);
   if (credentialMatch) {
     isObfuscated = true;
     technique = 'credential_prefix';

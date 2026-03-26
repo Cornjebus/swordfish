@@ -66,9 +66,12 @@ describe('Sync Emails Cron Job', () => {
     it('should reject requests with invalid secret', async () => {
       const { GET } = await import('@/app/api/cron/sync-emails/route');
 
+      // Sprint 1: Auth now uses crypto.timingSafeEqual which requires equal-length
+      // buffers. Use a wrong secret with the same byte length as 'test-cron-secret'
+      // (16 bytes) so timingSafeEqual returns false instead of throwing.
       const request = new NextRequest('http://localhost/api/cron/sync-emails', {
         headers: {
-          authorization: 'Bearer invalid-secret',
+          authorization: 'Bearer bad-cron-secret!',
         },
       });
 

@@ -148,7 +148,9 @@ describe('OAuth Token Encryption', () => {
       vi.resetModules();
       const { getEncryptionKey } = await import(ENCRYPTION_MODULE_PATH);
 
-      expect(() => getEncryptionKey()).toThrow('ENCRYPTION_KEY must be exactly 32 characters');
+      // Sprint 1: Changed from string .length to Buffer.byteLength for
+      // correct multi-byte character handling
+      expect(() => getEncryptionKey()).toThrow('ENCRYPTION_KEY must be exactly 32 bytes');
     });
 
     it('should derive consistent key from environment', async () => {

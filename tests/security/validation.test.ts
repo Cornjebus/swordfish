@@ -190,9 +190,11 @@ describe('Input Sanitization', () => {
       const input = '<p>Hello</p><script>alert(1)</script><p>World</p>';
       const sanitized = sanitizeHtml(input);
 
+      // Sprint 1: DOMPurify with ALLOWED_TAGS: [] strips ALL tags, keeping only text
       expect(sanitized).not.toContain('<script>');
       expect(sanitized).not.toContain('alert');
-      expect(sanitized).toContain('<p>Hello</p>');
+      expect(sanitized).toContain('Hello');
+      expect(sanitized).toContain('World');
     });
 
     it('should remove event handlers', () => {
@@ -210,16 +212,22 @@ describe('Input Sanitization', () => {
       expect(sanitized).not.toContain('javascript:');
     });
 
-    it('should preserve safe HTML elements', () => {
+    it('should strip all HTML tags for maximum safety', () => {
+      // Sprint 1: Replaced regex sanitizer with DOMPurify using ALLOWED_TAGS: []
+      // which strips ALL tags for maximum safety — only text content remains.
       const input = '<p><strong>Bold</strong> and <em>italic</em></p>';
       const sanitized = sanitizeHtml(input);
 
-      expect(sanitized).toContain('<p>');
-      expect(sanitized).toContain('<strong>');
-      expect(sanitized).toContain('<em>');
+      expect(sanitized).not.toContain('<p>');
+      expect(sanitized).not.toContain('<strong>');
+      expect(sanitized).not.toContain('<em>');
+      expect(sanitized).toContain('Bold');
+      expect(sanitized).toContain('italic');
     });
 
     it('should handle encoded XSS attempts', () => {
+      // Sprint 1: DOMPurify handles entity decoding internally.
+      // The function no longer accepts a decodeEntities option.
       const inputs = [
         '&lt;script&gt;alert(1)&lt;/script&gt;',
         '%3Cscript%3Ealert(1)%3C/script%3E',
@@ -227,7 +235,7 @@ describe('Input Sanitization', () => {
       ];
 
       for (const input of inputs) {
-        const sanitized = sanitizeHtml(input, { decodeEntities: true });
+        const sanitized = sanitizeHtml(input);
         expect(sanitized).not.toContain('<script>');
       }
     });
