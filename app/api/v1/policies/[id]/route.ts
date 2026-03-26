@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return errors.invalidScope(API_SCOPES.POLICIES_READ);
     }
 
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     const { id } = await params;
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const p = result[0];
-    const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+    const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
     return apiSuccess({
       policy: {
         id: p.id,
@@ -72,7 +72,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return errors.invalidScope(API_SCOPES.POLICIES_WRITE);
     }
 
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     const { id } = await params;
@@ -126,7 +126,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     `;
 
     const p = updated[0];
-    const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+    const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
     return apiSuccess({
       policy: {
         id: p.id,
@@ -152,7 +152,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return errors.invalidScope(API_SCOPES.POLICIES_WRITE);
     }
 
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     const { id } = await params;
@@ -183,7 +183,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       )
     `;
 
-    const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+    const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
     return apiSuccess({ deleted: true, id }, undefined, headers);
   });
 }

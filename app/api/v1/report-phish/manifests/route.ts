@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Check rate limit
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     // Parse query parameters
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ||
       `${request.nextUrl.protocol}//${request.nextUrl.host}`;
 
-    const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+    const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
 
     if (manifestType === 'outlook') {
       const manifest = generateOutlookManifest(auth.tenantId!, baseUrl);

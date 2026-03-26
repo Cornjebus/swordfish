@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Check rate limit
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     // Parse query parameters
@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
     const totalReportsAcrossAll = leaderboard.reduce((sum, e) => sum + e.totalReports, 0);
     const totalConfirmedAcrossAll = leaderboard.reduce((sum, e) => sum + e.confirmedPhish, 0);
 
-    const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+    const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
     return apiSuccess({
       leaderboard: formattedLeaderboard,
       summary: {

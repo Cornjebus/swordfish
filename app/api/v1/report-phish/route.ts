@@ -50,11 +50,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Check standard rate limit
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     // Check stricter submission rate limit
-    const submitLimit = checkRateLimit(auth.tenantId!, REPORT_SUBMISSION_LIMIT);
+    const submitLimit = await checkRateLimit(auth.tenantId!, REPORT_SUBMISSION_LIMIT);
     if (!submitLimit.allowed) {
       return errors.rateLimited(Math.ceil((submitLimit.resetAt - Date.now()) / 1000));
     }
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
       // Submit the report
       const result = await phishReportService.submitReport(auth.tenantId!, reportData);
 
-      const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+      const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
       return apiCreated({
         reportId: result.reportId,
         analysisQueued: result.analysisQueued,
@@ -155,7 +155,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Check rate limit
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     // Parse query parameters
@@ -230,7 +230,7 @@ export async function GET(request: NextRequest) {
       createdAt: r.createdAt.toISOString(),
     }));
 
-    const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+    const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
     return apiSuccess(
       { reports: formattedReports },
       {

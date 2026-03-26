@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
       return errors.invalidScope(API_SCOPES.POLICIES_READ);
     }
 
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     const searchParams = request.nextUrl.searchParams;
@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
       updatedAt: p.updated_at,
     }));
 
-    const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+    const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
     return apiSuccess(
       { policies: formattedPolicies },
       { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
       return errors.invalidScope(API_SCOPES.POLICIES_WRITE);
     }
 
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     const body = await request.json();
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
       )
     `;
 
-    const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+    const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
     return apiCreated({
       policy: { id, type, target, value, action, priority, isActive },
     }, headers);

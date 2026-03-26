@@ -1,10 +1,17 @@
 /**
- * API Rate Limiting
+ * API Rate Limiting — Upstash Redis (Sliding Window)
  *
- * Token bucket rate limiting for REST API
+ * Uses @upstash/ratelimit with Redis for distributed rate limiting.
+ * Falls back to allowing requests when Redis is unavailable (env vars missing).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
+
+// ---------------------------------------------------------------------------
+// Tier definitions — keep the same limits as before
+// ---------------------------------------------------------------------------
 
 interface RateLimitConfig {
   maxRequests: number;  // Max requests per window
@@ -12,98 +19,146 @@ interface RateLimitConfig {
   keyPrefix?: string;   // Optional key prefix for different limiters
 }
 
-interface RateLimitEntry {
-  count: number;
-  resetAt: number;
-}
-
-// In-memory store (use Redis in production)
-const store = new Map<string, RateLimitEntry>();
-
-// Default rate limits by plan
-export const RATE_LIMITS = {
-  starter: { maxRequests: 100, windowMs: 60 * 1000 },    // 100/min
-  pro: { maxRequests: 500, windowMs: 60 * 1000 },       // 500/min
-  enterprise: { maxRequests: 2000, windowMs: 60 * 1000 }, // 2000/min
-  default: { maxRequests: 60, windowMs: 60 * 1000 },     // 60/min for unauthenticated
+export const RATE_LIMITS: Record<string, RateLimitConfig> = {
+  starter:    { maxRequests: 100,  windowMs: 60 * 1000 },  // 100/min
+  pro:        { maxRequests: 500,  windowMs: 60 * 1000 },  // 500/min
+  enterprise: { maxRequests: 2000, windowMs: 60 * 1000 },  // 2000/min
+  default:    { maxRequests: 60,   windowMs: 60 * 1000 },  // 60/min unauthenticated
 };
 
-/**
- * Check rate limit for a given key
- */
-export function checkRateLimit(
-  key: string,
-  config: RateLimitConfig
-): { allowed: boolean; remaining: number; resetAt: number } {
-  const now = Date.now();
-  const fullKey = config.keyPrefix ? `${config.keyPrefix}:${key}` : key;
+// ---------------------------------------------------------------------------
+// Redis client — lazy-init, null when env vars are missing
+// ---------------------------------------------------------------------------
 
-  let entry = store.get(fullKey);
+let _redis: Redis | null = null;
 
-  // If no entry or window has passed, create new entry
-  if (!entry || now >= entry.resetAt) {
-    entry = {
-      count: 1,
-      resetAt: now + config.windowMs,
-    };
-    store.set(fullKey, entry);
+function getRedis(): Redis | null {
+  if (_redis) return _redis;
 
-    return {
-      allowed: true,
-      remaining: config.maxRequests - 1,
-      resetAt: entry.resetAt,
-    };
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (!url || !token) {
+    return null;
   }
 
-  // Check if limit exceeded
-  if (entry.count >= config.maxRequests) {
-    return {
-      allowed: false,
-      remaining: 0,
-      resetAt: entry.resetAt,
-    };
-  }
-
-  // Increment counter
-  entry.count++;
-  store.set(fullKey, entry);
-
-  return {
-    allowed: true,
-    remaining: config.maxRequests - entry.count,
-    resetAt: entry.resetAt,
-  };
+  _redis = new Redis({ url, token });
+  return _redis;
 }
 
-/**
- * Rate limit middleware for API routes
- */
-export function rateLimitMiddleware(
+// ---------------------------------------------------------------------------
+// Per-tier Ratelimit instances (cached)
+// ---------------------------------------------------------------------------
+
+const _limiters = new Map<string, Ratelimit>();
+
+function getLimiter(plan: string): Ratelimit | null {
+  const redis = getRedis();
+  if (!redis) return null;
+
+  const cacheKey = plan;
+  if (_limiters.has(cacheKey)) return _limiters.get(cacheKey)!;
+
+  const config = RATE_LIMITS[plan] || RATE_LIMITS.default;
+  const windowSec = Math.ceil(config.windowMs / 1000);
+
+  const limiter = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(config.maxRequests, `${windowSec} s`),
+    prefix: 'api',
+    analytics: false,
+  });
+
+  _limiters.set(cacheKey, limiter);
+  return limiter;
+}
+
+// ---------------------------------------------------------------------------
+// checkRateLimit — same signature as before
+// ---------------------------------------------------------------------------
+
+export async function checkRateLimit(
+  key: string,
+  config: RateLimitConfig
+): Promise<{ allowed: boolean; remaining: number; resetAt: number }> {
+  const redis = getRedis();
+
+  // Fallback: no Redis => allow everything with a warning
+  if (!redis) {
+    console.warn(
+      '[rate-limit] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN not set — rate limiting disabled'
+    );
+    return {
+      allowed: true,
+      remaining: config.maxRequests,
+      resetAt: Date.now() + config.windowMs,
+    };
+  }
+
+  // Determine which plan this config matches (for limiter cache)
+  const plan = Object.entries(RATE_LIMITS).find(
+    ([, v]) => v.maxRequests === config.maxRequests && v.windowMs === config.windowMs
+  )?.[0] || 'default';
+
+  const limiter = getLimiter(plan);
+  if (!limiter) {
+    return {
+      allowed: true,
+      remaining: config.maxRequests,
+      resetAt: Date.now() + config.windowMs,
+    };
+  }
+
+  const fullKey = config.keyPrefix ? `${config.keyPrefix}:${key}` : key;
+
+  try {
+    const result = await limiter.limit(fullKey);
+    return {
+      allowed: result.success,
+      remaining: result.remaining,
+      resetAt: result.reset,
+    };
+  } catch (err) {
+    console.warn('[rate-limit] Redis error — allowing request', err);
+    return {
+      allowed: true,
+      remaining: config.maxRequests,
+      resetAt: Date.now() + config.windowMs,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// rateLimitMiddleware — same signature as before
+// ---------------------------------------------------------------------------
+
+export async function rateLimitMiddleware(
   request: NextRequest,
   tenantId: string | null,
   plan: string = 'default'
-): NextResponse | null {
-  // Get rate limit config based on plan
-  const config = RATE_LIMITS[plan as keyof typeof RATE_LIMITS] || RATE_LIMITS.default;
+): Promise<NextResponse | null> {
+  const config = RATE_LIMITS[plan] || RATE_LIMITS.default;
 
   // Use tenant ID or IP as the rate limit key
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0] ||
-             request.headers.get('x-real-ip') ||
-             'anonymous';
+  const ip =
+    request.headers.get('x-forwarded-for')?.split(',')[0] ||
+    request.headers.get('x-real-ip') ||
+    'anonymous';
   const key = tenantId || ip;
 
-  const { allowed, remaining, resetAt } = checkRateLimit(key, {
+  const { allowed, remaining, resetAt } = await checkRateLimit(key, {
     ...config,
     keyPrefix: 'api',
   });
 
-  // If rate limited, return 429 response
+  // 429 — rate limited
   if (!allowed) {
+    const retryAfter = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
     return NextResponse.json(
       {
         error: 'Rate limit exceeded',
-        message: `Too many requests. Please wait ${Math.ceil((resetAt - Date.now()) / 1000)} seconds.`,
-        retryAfter: Math.ceil((resetAt - Date.now()) / 1000),
+        message: `Too many requests. Please wait ${retryAfter} seconds.`,
+        retryAfter,
       },
       {
         status: 429,
@@ -111,31 +166,31 @@ export function rateLimitMiddleware(
           'X-RateLimit-Limit': config.maxRequests.toString(),
           'X-RateLimit-Remaining': '0',
           'X-RateLimit-Reset': Math.ceil(resetAt / 1000).toString(),
-          'Retry-After': Math.ceil((resetAt - Date.now()) / 1000).toString(),
+          'Retry-After': retryAfter.toString(),
         },
       }
     );
   }
 
-  // Return null to indicate request is allowed (headers will be added by the route)
+  // Allowed — caller adds headers to the response
   return null;
 }
 
-/**
- * Get rate limit headers to add to successful responses
- */
-export function getRateLimitHeaders(
+// ---------------------------------------------------------------------------
+// getRateLimitHeaders — same signature as before
+// ---------------------------------------------------------------------------
+
+export async function getRateLimitHeaders(
   tenantId: string | null,
   plan: string = 'default'
-): Record<string, string> {
-  const config = RATE_LIMITS[plan as keyof typeof RATE_LIMITS] || RATE_LIMITS.default;
+): Promise<Record<string, string>> {
+  const config = RATE_LIMITS[plan] || RATE_LIMITS.default;
   const key = tenantId || 'anonymous';
   const fullKey = `api:${key}`;
 
-  const entry = store.get(fullKey);
-  const now = Date.now();
-
-  if (!entry || now >= entry.resetAt) {
+  const redis = getRedis();
+  if (!redis) {
+    const now = Date.now();
     return {
       'X-RateLimit-Limit': config.maxRequests.toString(),
       'X-RateLimit-Remaining': config.maxRequests.toString(),
@@ -143,29 +198,30 @@ export function getRateLimitHeaders(
     };
   }
 
-  return {
-    'X-RateLimit-Limit': config.maxRequests.toString(),
-    'X-RateLimit-Remaining': Math.max(0, config.maxRequests - entry.count).toString(),
-    'X-RateLimit-Reset': Math.ceil(entry.resetAt / 1000).toString(),
-  };
-}
-
-/**
- * Clean up expired entries (call periodically)
- */
-export function cleanupExpiredEntries(): number {
-  const now = Date.now();
-  let cleaned = 0;
-
-  for (const [key, entry] of store.entries()) {
-    if (now >= entry.resetAt) {
-      store.delete(key);
-      cleaned++;
-    }
+  // Peek at current usage without consuming a token
+  const limiter = getLimiter(plan);
+  if (!limiter) {
+    const now = Date.now();
+    return {
+      'X-RateLimit-Limit': config.maxRequests.toString(),
+      'X-RateLimit-Remaining': config.maxRequests.toString(),
+      'X-RateLimit-Reset': Math.ceil((now + config.windowMs) / 1000).toString(),
+    };
   }
 
-  return cleaned;
+  try {
+    const result = await limiter.getRemaining(fullKey);
+    return {
+      'X-RateLimit-Limit': config.maxRequests.toString(),
+      'X-RateLimit-Remaining': Math.max(0, result.remaining).toString(),
+      'X-RateLimit-Reset': Math.ceil(result.reset / 1000).toString(),
+    };
+  } catch {
+    const now = Date.now();
+    return {
+      'X-RateLimit-Limit': config.maxRequests.toString(),
+      'X-RateLimit-Remaining': config.maxRequests.toString(),
+      'X-RateLimit-Reset': Math.ceil((now + config.windowMs) / 1000).toString(),
+    };
+  }
 }
-
-// Note: In serverless environments, cleanup happens on each request
-// For persistent servers, call cleanupExpiredEntries() periodically

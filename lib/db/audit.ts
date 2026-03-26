@@ -62,6 +62,10 @@ export async function logAuditEvent(entry: AuditLogEntry): Promise<string> {
 
 /**
  * Get audit logs with filtering
+ *
+ * Uses a parameterised query builder that pushes conditions and values together
+ * so parameter indices are always correct and filter values are validated
+ * against known enums before inclusion.
  */
 export async function getAuditLogs(filters: {
   tenantId?: string;
@@ -86,49 +90,67 @@ export async function getAuditLogs(filters: {
     offset = 0,
   } = filters;
 
-  // Build dynamic query
+  // Clamp limit/offset to sane ranges
+  const safeLimit = Math.min(Math.max(1, Number(limit) || 50), 500);
+  const safeOffset = Math.max(0, Number(offset) || 0);
+
+  // Build conditions and values in lockstep
   const conditions: string[] = [];
   const values: unknown[] = [];
-  let paramIndex = 1;
+
+  function addCondition(column: string, value: unknown) {
+    values.push(value);
+    conditions.push(`${column} = $${values.length}`);
+  }
 
   if (tenantId) {
-    conditions.push(`tenant_id = $${paramIndex++}`);
-    values.push(tenantId);
+    addCondition('tenant_id', tenantId);
   }
 
   if (actorId) {
-    conditions.push(`actor_id = $${paramIndex++}`);
-    values.push(actorId);
+    addCondition('actor_id', actorId);
   }
 
+  // Validate action against known enum values
   if (action) {
-    conditions.push(`action = $${paramIndex++}`);
-    values.push(action);
+    const validActions = new Set<string>(Object.values(AuditAction));
+    if (!validActions.has(action)) {
+      // Unknown action -- return empty rather than passing unsanitised value
+      return [];
+    }
+    addCondition('action', action);
   }
 
+  // Validate resourceType against known enum values
   if (resourceType) {
-    conditions.push(`resource_type = $${paramIndex++}`);
-    values.push(resourceType);
+    const validResourceTypes = new Set<string>(Object.values(AuditResourceType));
+    if (!validResourceTypes.has(resourceType)) {
+      return [];
+    }
+    addCondition('resource_type', resourceType);
   }
 
   if (resourceId) {
-    conditions.push(`resource_id = $${paramIndex++}`);
-    values.push(resourceId);
+    addCondition('resource_id', resourceId);
   }
 
   if (startDate) {
-    conditions.push(`created_at >= $${paramIndex++}`);
     values.push(startDate.toISOString());
+    conditions.push(`created_at >= $${values.length}`);
   }
 
   if (endDate) {
-    conditions.push(`created_at <= $${paramIndex++}`);
     values.push(endDate.toISOString());
+    conditions.push(`created_at <= $${values.length}`);
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  values.push(limit, offset);
+  // LIMIT and OFFSET always come last
+  values.push(safeLimit);
+  const limitIdx = values.length;
+  values.push(safeOffset);
+  const offsetIdx = values.length;
 
   const query = `
     SELECT
@@ -147,7 +169,7 @@ export async function getAuditLogs(filters: {
     FROM audit_log
     ${whereClause}
     ORDER BY created_at DESC
-    LIMIT $${paramIndex++} OFFSET $${paramIndex}
+    LIMIT $${limitIdx} OFFSET $${offsetIdx}
   `;
 
   const result = await sql.query(query, values);

@@ -3,6 +3,19 @@ import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 // Lazy-initialized SQL client to prevent build-time initialization errors
 let _sql: NeonQueryFunction<false, false> | null = null;
 
+/**
+ * Returns the pooled Neon SQL client.
+ *
+ * Uses DATABASE_URL which should point to the **pooled** connection string
+ * (the one ending in `-pooler.*.neon.tech`).  The Neon HTTP driver
+ * automatically caches connections server-side (fetchConnectionCache is
+ * deprecated and defaults to true).
+ *
+ * For migrations that require DDL / schema changes, use DATABASE_URL_UNPOOLED
+ * which connects directly without the connection pooler.  PgBouncer in
+ * transaction mode does not support prepared statements or SET commands that
+ * persist across transactions.
+ */
 function getSqlClient(): NeonQueryFunction<false, false> {
   if (!_sql) {
     if (!process.env.DATABASE_URL) {
@@ -11,6 +24,11 @@ function getSqlClient(): NeonQueryFunction<false, false> {
     _sql = neon(process.env.DATABASE_URL);
   }
   return _sql;
+}
+
+/** Expose the underlying getter for use in withTransaction and other helpers */
+export function getDb(): NeonQueryFunction<false, false> {
+  return getSqlClient();
 }
 
 // Proxy for backward compatibility - lazily initializes on first use
@@ -201,4 +219,39 @@ export async function withTenant<T>(
   // Set tenant context for RLS policies
   await sql`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`;
   return queryFn();
+}
+
+// ---------------------------------------------------------------------------
+// Transaction helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute multiple queries inside a single Neon HTTP transaction.
+ *
+ * Neon serverless exposes `sql.transaction()` which batches an array of
+ * queries into one HTTP round-trip wrapped in BEGIN / COMMIT.  The callback
+ * receives a `txn` tagged-template function -- use it exactly like `sql` but
+ * return an array of query promises (do NOT await them inside the callback).
+ *
+ * **Important**: this is a _non-interactive_ transaction.  All queries must
+ * be declared upfront; you cannot branch on intermediate results.  If you
+ * need interactive (multi-statement, conditional) transactions, connect via
+ * WebSocket using `@neondatabase/serverless` Pool/Client instead of HTTP.
+ *
+ * @example
+ * ```ts
+ * const [users, orgs] = await withTransaction(txn => [
+ *   txn`INSERT INTO users (name) VALUES (${'Alice'}) RETURNING *`,
+ *   txn`INSERT INTO orgs  (name) VALUES (${'Acme'})  RETURNING *`,
+ * ]);
+ * ```
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function withTransaction(
+  // The callback receives a txn tagged-template function and must return
+  // an array of query promises (non-awaited).
+  callback: (txn: any) => any[]
+): Promise<any[]> {
+  const client = getSqlClient();
+  return client.transaction(callback);
 }

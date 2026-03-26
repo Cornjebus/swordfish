@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return errors.invalidScope(API_SCOPES.THREATS_READ);
     }
 
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     const { id } = await params;
@@ -83,7 +83,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       updatedAt: t.updated_at,
     };
 
-    const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+    const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
     return apiSuccess({ threat }, undefined, headers);
   });
 }
@@ -98,7 +98,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return errors.invalidScope(API_SCOPES.THREATS_WRITE);
     }
 
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     const { id } = await params;
@@ -157,7 +157,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       )
     `;
 
-    const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+    const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
     return apiSuccess({ id, action, success: true }, undefined, headers);
   });
 }

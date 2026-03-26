@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Check rate limit
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     // Parse query parameters
@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
       createdAt: t.created_at,
     }));
 
-    const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+    const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
 
     return apiSuccess(
       { threats: formattedThreats },

@@ -41,7 +41,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Check rate limit
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     const { id } = await params;
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       },
     };
 
-    const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+    const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
     return apiSuccess({ report: formattedReport }, undefined, headers);
   });
 }
@@ -109,7 +109,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     // Check rate limit
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     const { id } = await params;
@@ -122,7 +122,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       // Re-run analysis on the report
       try {
         const result = await phishReportService.analyzeReportedEmail(id, auth.tenantId!);
-        const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+        const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
         return apiSuccess({
           id,
           action: 'analyze',
@@ -165,7 +165,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           feedback
         );
 
-        const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+        const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
         return apiSuccess({
           id,
           action: 'feedback',
@@ -204,7 +204,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     // Check rate limit
-    const rateLimitResponse = rateLimitMiddleware(request, auth.tenantId!, 'pro');
+    const rateLimitResponse = await rateLimitMiddleware(request, auth.tenantId!, 'pro');
     if (rateLimitResponse) return rateLimitResponse;
 
     const { id } = await params;
@@ -216,7 +216,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return errors.notFound('Phish report');
     }
 
-    const headers = getRateLimitHeaders(auth.tenantId!, 'pro');
+    const headers = await getRateLimitHeaders(auth.tenantId!, 'pro');
     return apiSuccess({ id, deleted: true }, undefined, headers);
   });
 }
