@@ -4,26 +4,21 @@
  * Schedule: Every 5 minutes (configured in vercel.json)
  */
 
+import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { runFullSync } from '@/lib/workers/email-sync';
-
-// Vercel cron secret for authentication
-const CRON_SECRET = process.env.CRON_SECRET;
 
 export const maxDuration = 60; // Allow full 60s for sync
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    // Verify cron secret (Vercel sends this header)
-    const authHeader = request.headers.get('authorization');
-
-    // In production, verify the secret
-    if (process.env.NODE_ENV === 'production' && CRON_SECRET) {
-      if (authHeader !== `Bearer ${CRON_SECRET}`) {
-        console.warn('[Cron Sync] Unauthorized request');
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
+    // Verify cron secret with timing-safe comparison in ALL environments
+    const cronSecret = request.headers.get('authorization')?.replace('Bearer ', '') ?? '';
+    const expected = process.env.CRON_SECRET ?? '';
+    if (!expected || !cronSecret || !crypto.timingSafeEqual(Buffer.from(cronSecret), Buffer.from(expected))) {
+      console.warn('[Cron Sync] Unauthorized request');
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     console.log('[Cron Sync] Starting scheduled email sync...');

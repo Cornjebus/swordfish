@@ -22,8 +22,8 @@ export function getEncryptionKey(): Buffer {
     throw new Error('ENCRYPTION_KEY environment variable is required');
   }
 
-  if (key.length !== 32) {
-    throw new Error('ENCRYPTION_KEY must be exactly 32 characters');
+  if (Buffer.byteLength(key, 'utf8') !== 32) {
+    throw new Error('ENCRYPTION_KEY must be exactly 32 bytes (256 bits)');
   }
 
   return Buffer.from(key, 'utf8');

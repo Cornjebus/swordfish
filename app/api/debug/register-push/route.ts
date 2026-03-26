@@ -1,16 +1,33 @@
 /**
- * Force Register Gmail Push Watch (No Auth Required)
+ * Force Register Gmail Push Watch (Admin Auth Required)
  * Immediately registers Gmail push notifications for ALL connected integrations
  * This fixes the root cause: push watch was never registered
  */
 
 import { NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 import { sql } from '@/lib/db';
 import { getGmailAccessToken } from '@/lib/integrations/gmail';
 import { createGmailSubscription } from '@/lib/webhooks/subscriptions';
 
 export async function POST() {
   try {
+    // Require authenticated admin user
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Verify admin status in database
+    const adminCheck = await sql`
+      SELECT is_msp_user FROM users
+      WHERE clerk_user_id = ${userId}
+      LIMIT 1
+    `;
+    if (!adminCheck[0]?.is_msp_user) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const result: any = {
       timestamp: new Date().toISOString(),
       steps: [],

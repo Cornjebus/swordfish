@@ -1,13 +1,30 @@
 /**
- * Database State Check (No Auth Required)
+ * Database State Check (Admin Auth Required)
  * Shows current state of integrations for debugging
  */
 
 import { NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 import { sql } from '@/lib/db';
 
 export async function GET() {
   try {
+    // Require authenticated admin user
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Verify admin status in database
+    const adminCheck = await sql`
+      SELECT is_msp_user FROM users
+      WHERE clerk_user_id = ${userId}
+      LIMIT 1
+    `;
+    if (!adminCheck[0]?.is_msp_user) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     // Get ALL Gmail integrations (no tenant filter)
     const integrations = await sql`
       SELECT

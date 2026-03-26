@@ -2,6 +2,34 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import { neon } from '@neondatabase/serverless';
 
+/**
+ * Security headers applied to every response.
+ */
+const SECURITY_HEADERS: Record<string, string> = {
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://*.clerk.accounts.dev",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    "font-src 'self' data:",
+    "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://api.stripe.com",
+    "frame-src 'self' https://*.clerk.accounts.dev https://*.stripe.com",
+  ].join('; '),
+};
+
+/** Apply security headers to any NextResponse */
+function withSecurityHeaders(response: NextResponse): NextResponse {
+  for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+    response.headers.set(key, value);
+  }
+  return response;
+}
+
 // Define public routes that don't require authentication
 const isPublicRoute = createRouteMatcher([
   '/',
@@ -52,29 +80,29 @@ export default clerkMiddleware(async (auth, request) => {
 
   // Allow public routes
   if (isPublicRoute(request)) {
-    return NextResponse.next();
+    return withSecurityHeaders(NextResponse.next());
   }
 
   // Redirect unauthenticated users to sign-in
   if (!userId) {
     const signInUrl = new URL('/sign-in', request.url);
     signInUrl.searchParams.set('redirect_url', request.url);
-    return NextResponse.redirect(signInUrl);
+    return withSecurityHeaders(NextResponse.redirect(signInUrl));
   }
 
   // Allow API calls needed during onboarding
   if (request.nextUrl.pathname.startsWith('/api/onboarding')) {
-    return NextResponse.next();
+    return withSecurityHeaders(NextResponse.next());
   }
   if (request.nextUrl.pathname.startsWith('/api/settings')) {
-    return NextResponse.next();
+    return withSecurityHeaders(NextResponse.next());
   }
   if (request.nextUrl.pathname.startsWith('/api/auth')) {
-    return NextResponse.next();
+    return withSecurityHeaders(NextResponse.next());
   }
   // Allow admin verify API (needed for dashboard access check)
   if (request.nextUrl.pathname.startsWith('/api/admin')) {
-    return NextResponse.next();
+    return withSecurityHeaders(NextResponse.next());
   }
 
   // Check if user has completed onboarding via public metadata
@@ -90,7 +118,7 @@ export default clerkMiddleware(async (auth, request) => {
 
   // If user hasn't completed onboarding and isn't on onboarding page, redirect there
   if (!hasCompletedOnboarding && !isOnboardingRoute(request)) {
-    return NextResponse.redirect(new URL('/onboarding', request.url));
+    return withSecurityHeaders(NextResponse.redirect(new URL('/onboarding', request.url)));
   }
 
   // Create headers with user context for downstream use
@@ -99,30 +127,10 @@ export default clerkMiddleware(async (auth, request) => {
   if (orgId) headers.set('x-org-id', orgId);
   if (orgRole) headers.set('x-org-role', orgRole);
 
-  // Dashboard routes
-  if (isDashboardRoute(request)) {
-    return NextResponse.next({
-      request: { headers },
-    });
-  }
-
-  // Admin routes
-  if (isAdminRoute(request)) {
-    return NextResponse.next({
-      request: { headers },
-    });
-  }
-
-  // API routes - add auth context
-  if (isApiRoute(request)) {
-    return NextResponse.next({
-      request: { headers },
-    });
-  }
-
-  return NextResponse.next({
+  // All remaining routes get auth context headers
+  return withSecurityHeaders(NextResponse.next({
     request: { headers },
-  });
+  }));
 });
 
 export const config = {
