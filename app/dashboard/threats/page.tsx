@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useTenant } from '@/lib/auth/tenant-context';
+import { ShieldCheck, Info, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 
 interface Threat {
@@ -17,33 +19,59 @@ interface Threat {
   explanation: string;
 }
 
+const ITEMS_PER_PAGE = 50;
+
 export default function ThreatsPage() {
   const { currentTenant } = useTenant();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const currentPage = Number(searchParams.get('page') || '1');
+  const currentFilter = (searchParams.get('status') || 'all') as 'all' | 'quarantined' | 'released' | 'deleted';
+
   const [threats, setThreats] = useState<Threat[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'quarantined' | 'released' | 'deleted'>('all');
+
+  const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
+
+  function updateParams(updates: Record<string, string>) {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === 'all' && key === 'status') {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+    }
+    router.replace(`?${params.toString()}`);
+  }
 
   const fetchThreats = useCallback(async () => {
     if (!currentTenant) return;
 
     try {
       const params = new URLSearchParams();
-      params.set('status', filter);
+      params.set('status', currentFilter);
+      params.set('page', String(currentPage));
+      params.set('limit', String(ITEMS_PER_PAGE));
 
       const response = await fetch(`/api/threats?${params}`);
       if (!response.ok) throw new Error('Failed to fetch threats');
 
       const data = await response.json();
       setThreats(data.threats || []);
+      setTotal(data.total || data.threats?.length || 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load threats');
     } finally {
       setLoading(false);
     }
-  }, [currentTenant, filter]);
+  }, [currentTenant, currentFilter, currentPage]);
 
   useEffect(() => {
+    setLoading(true);
     fetchThreats();
   }, [fetchThreats]);
 
@@ -75,6 +103,9 @@ export default function ThreatsPage() {
     );
   }
 
+  const startItem = (currentPage - 1) * ITEMS_PER_PAGE + 1;
+  const endItem = Math.min(currentPage * ITEMS_PER_PAGE, total);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -101,9 +132,9 @@ export default function ThreatsPage() {
             {(['all', 'quarantined', 'released', 'deleted'] as const).map((status) => (
               <button
                 key={status}
-                onClick={() => setFilter(status)}
+                onClick={() => updateParams({ status, page: '1' })}
                 className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                  filter === status
+                  currentFilter === status
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
@@ -125,13 +156,13 @@ export default function ThreatsPage() {
       {/* Threats Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         {threats.length === 0 ? (
-          <div className="p-8 text-center">
-            <ShieldCheckIcon className="mx-auto h-12 w-12 text-green-500" />
-            <h3 className="mt-2 text-lg font-medium text-gray-900">No threats found</h3>
+          <div className="text-center py-12">
+            <ShieldCheck className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-2 text-sm font-semibold text-gray-900">No threats found</h3>
             <p className="mt-1 text-sm text-gray-500">
-              {filter === 'all'
+              {currentFilter === 'all'
                 ? 'No email threats have been detected yet.'
-                : `No ${filter} threats found.`}
+                : `No ${currentFilter} threats found.`}
             </p>
           </div>
         ) : (
@@ -208,10 +239,42 @@ export default function ThreatsPage() {
         )}
       </div>
 
+      {/* Pagination */}
+      {total > ITEMS_PER_PAGE && (
+        <div className="flex items-center justify-between bg-white rounded-lg shadow px-4 py-3">
+          <p className="text-sm text-gray-700">
+            Showing <span className="font-medium">{startItem}</span> to{' '}
+            <span className="font-medium">{endItem}</span> of{' '}
+            <span className="font-medium">{total}</span> results
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => updateParams({ page: String(currentPage - 1) })}
+              disabled={currentPage <= 1}
+              className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </button>
+            <span className="text-sm text-gray-700">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => updateParams({ page: String(currentPage + 1) })}
+              disabled={currentPage >= totalPages}
+              className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Info banner */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-start gap-3">
-          <InfoIcon className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+          <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
           <div>
             <h4 className="font-medium text-blue-900">Looking for quarantine actions?</h4>
             <p className="text-sm text-blue-700 mt-1">
@@ -225,21 +288,5 @@ export default function ThreatsPage() {
         </div>
       </div>
     </div>
-  );
-}
-
-function ShieldCheckIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-    </svg>
-  );
-}
-
-function InfoIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
-    </svg>
   );
 }

@@ -138,7 +138,6 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
     WHERE id = ${tenantId}::uuid
   `;
 
-  console.log(`Subscription created: tenant=${tenantId} plan=${plan}`);
 }
 
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
@@ -176,7 +175,6 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     `;
   }
 
-  console.log(`Subscription updated: tenant=${tenantId} plan=${plan || 'unchanged'} status=${subscription.status}`);
 }
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
@@ -202,7 +200,6 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     WHERE id = ${tenantId}::uuid
   `;
 
-  console.log(`Subscription deleted: tenant=${tenantId} downgraded to starter`);
 }
 
 async function handlePaymentFailed(invoice: Stripe.Invoice) {
@@ -257,5 +254,4 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
     `;
   }
 
-  console.log(`Payment failed: tenant=${tenantId} attempt=${failCount}${failCount >= 3 ? ' (suspended)' : ''}`);
 }

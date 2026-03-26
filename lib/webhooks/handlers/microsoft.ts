@@ -93,8 +93,6 @@ async function processNotification(notification: GraphNotification): Promise<{
     return { processed: false, threatFound: false };
   }
 
-  console.log(`[Microsoft Webhook] Processing notification for subscription ${subscriptionId}`);
-
   // Find integration by subscription ID or client state (tenant ID)
   let integrations = await sql`
     SELECT id, tenant_id, config, nango_connection_id
@@ -223,8 +221,6 @@ async function processNotification(notification: GraphNotification): Promise<{
       score: verdict.overallScore,
     },
   });
-
-  console.log(`[Microsoft Webhook] Processed message ${messageId}: ${verdict.verdict} (${verdict.overallScore})`);
 
   return { processed: true, threatFound };
 }

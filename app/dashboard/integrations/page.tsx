@@ -107,11 +107,9 @@ export default function IntegrationsPage() {
 
       if (data.authUrl) {
         window.location.href = data.authUrl;
-      } else {
-        console.error('No auth URL returned');
       }
-    } catch (error) {
-      console.error(`Failed to connect ${type}:`, error);
+    } catch {
+      // Connection initiation failed
     } finally {
       setConnecting(null);
     }
@@ -140,8 +138,7 @@ export default function IntegrationsPage() {
       // Check content type before parsing JSON
       const contentType = response.headers.get('content-type');
       if (!contentType?.includes('application/json')) {
-        const text = await response.text();
-        console.error('Sync returned non-JSON response:', text.substring(0, 200));
+        await response.text();
         throw new Error('Sync service temporarily unavailable. Please try again.');
       }
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import Link from 'next/link';
 
 interface QuarantineItem {
@@ -151,15 +152,14 @@ export default function AdminQuarantinePage() {
 
       if (response.ok) {
         const data = await response.json();
-        alert(`Successfully ${action === 'release' ? 'released' : 'deleted'} ${data.results.success} email(s)`);
+        toast.success(`Successfully ${action === 'release' ? 'released' : 'deleted'} ${data.results.success} email(s)`);
         loadQuarantine();
       } else {
         const error = await response.json();
-        alert(error.error || 'Failed to perform action');
+        toast.error(error.error || 'Failed to perform action');
       }
-    } catch (error) {
-      console.error('Bulk action error:', error);
-      alert('Failed to perform action');
+    } catch {
+      toast.error('Failed to perform action');
     } finally {
       setBulkActionLoading(false);
     }
@@ -406,14 +406,14 @@ export default function AdminQuarantinePage() {
       });
 
       if (response.ok) {
+        toast.success(`Email ${action === 'release' ? 'released' : 'deleted'}`);
         loadQuarantine();
       } else {
         const error = await response.json();
-        alert(error.error || 'Failed to perform action');
+        toast.error(error.error || 'Failed to perform action');
       }
-    } catch (error) {
-      console.error('Action error:', error);
-      alert('Failed to perform action');
+    } catch {
+      toast.error('Failed to perform action');
     }
   }
 }

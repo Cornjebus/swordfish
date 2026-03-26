@@ -5,6 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
+import { ClipboardList, ShieldCheck, ShieldOff } from 'lucide-react';
 
 type ListType = 'allowlist' | 'blocklist';
 type EntryType = 'email' | 'domain' | 'ip' | 'url';
@@ -61,8 +63,8 @@ export default function PoliciesPage() {
       const response = await fetch('/api/policies');
       const data = await response.json();
       setPolicies(data.policies || []);
-    } catch (error) {
-      console.error('Failed to fetch policies:', error);
+    } catch {
+      toast.error('Failed to load policies');
     }
   }, []);
 
@@ -71,8 +73,8 @@ export default function PoliciesPage() {
       const response = await fetch(`/api/lists?type=${type}`);
       const data = await response.json();
       setListEntries(data.entries || []);
-    } catch (error) {
-      console.error('Failed to fetch list entries:', error);
+    } catch {
+      toast.error('Failed to load list entries');
     }
   }, []);
 
@@ -105,12 +107,15 @@ export default function PoliciesPage() {
       });
 
       if (response.ok) {
+        toast.success(`Entry added to ${activeTab}`);
         setNewEntry({ entryType: 'domain', value: '', reason: '' });
         setShowAddForm(false);
         fetchListEntries(activeTab as ListType);
+      } else {
+        toast.error('Failed to add entry');
       }
-    } catch (error) {
-      console.error('Failed to add entry:', error);
+    } catch {
+      toast.error('Failed to add entry');
     }
   }
 
@@ -119,9 +124,10 @@ export default function PoliciesPage() {
 
     try {
       await fetch(`/api/lists/${id}`, { method: 'DELETE' });
+      toast.success('Entry removed');
       fetchListEntries(activeTab as ListType);
-    } catch (error) {
-      console.error('Failed to delete entry:', error);
+    } catch {
+      toast.error('Failed to remove entry');
     }
   }
 
@@ -134,9 +140,10 @@ export default function PoliciesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
+      toast.success(`Policy ${newStatus === 'active' ? 'enabled' : 'disabled'}`);
       fetchPolicies();
-    } catch (error) {
-      console.error('Failed to toggle policy:', error);
+    } catch {
+      toast.error('Failed to update policy');
     }
   }
 
@@ -159,12 +166,15 @@ export default function PoliciesPage() {
       });
 
       if (response.ok) {
+        toast.success('Policy created');
         setNewPolicy({ name: '', description: '', type: 'detection', priority: 'medium' });
         setShowPolicyForm(false);
         fetchPolicies();
+      } else {
+        toast.error('Failed to create policy');
       }
-    } catch (error) {
-      console.error('Failed to create policy:', error);
+    } catch {
+      toast.error('Failed to create policy');
     } finally {
       setSavingPolicy(false);
     }
@@ -340,10 +350,10 @@ export default function PoliciesPage() {
             )}
 
             {policies.length === 0 && !showPolicyForm ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <div className="text-4xl mb-4">📋</div>
-                <p>No policies configured</p>
-                <p className="text-sm mt-2">
+              <div className="text-center py-12">
+                <ClipboardList className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-2 text-sm font-semibold text-gray-900">No policies configured</h3>
+                <p className="mt-1 text-sm text-gray-500">
                   Create policies to customize threat detection behavior
                 </p>
               </div>
@@ -372,7 +382,7 @@ export default function PoliciesPage() {
                       >
                         {policy.status === 'active' ? 'Disable' : 'Enable'}
                       </Button>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" onClick={() => toast.info('Policy editor coming soon')}>
                         Edit
                       </Button>
                     </div>
@@ -441,12 +451,14 @@ export default function PoliciesPage() {
 
             {/* Entries List */}
             {listEntries.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <div className="text-4xl mb-4">
-                  {activeTab === 'allowlist' ? '✅' : '🚫'}
-                </div>
-                <p>No entries in {activeTab}</p>
-                <p className="text-sm mt-2">
+              <div className="text-center py-12">
+                {activeTab === 'allowlist' ? (
+                  <ShieldCheck className="mx-auto h-12 w-12 text-gray-400" />
+                ) : (
+                  <ShieldOff className="mx-auto h-12 w-12 text-gray-400" />
+                )}
+                <h3 className="mt-2 text-sm font-semibold text-gray-900">No entries in {activeTab}</h3>
+                <p className="mt-1 text-sm text-gray-500">
                   Add senders or domains to customize detection behavior
                 </p>
               </div>

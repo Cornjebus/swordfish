@@ -110,11 +110,6 @@ export async function processFeedback(params: {
     // 4. Check if sender qualifies for promotion/demotion
     await evaluateSenderPromotion(params.senderDomain);
 
-    console.log(
-      `📚 Feedback processed: reputation=${result.reputationUpdated}, ` +
-        `patterns=${result.patternsExtracted}, rules=${result.rulesCreated}`
-    );
-
     return result;
   } catch (error) {
     console.error('Failed to process feedback:', error);
@@ -426,10 +421,6 @@ async function createRuleFromPattern(
       RETURNING id, created_at
     `;
 
-    console.log(
-      `📏 Created rule: ${ruleType} for ${pattern.pattern_type}=${pattern.pattern_value} (adj: ${scoreAdjustment})`
-    );
-
     return {
       rule_id: result[0].id as string,
       rule_type: ruleType as LearnedRule['rule_type'],
@@ -484,7 +475,6 @@ async function evaluateSenderPromotion(domain: string): Promise<void> {
           trust_score = ${newTrustScore}
         WHERE domain = ${domain}
       `;
-      console.log(`📈 Promoted ${domain} to marketing (trust: ${newTrustScore})`);
     }
 
     // Demotion: 50%+ threat/spam feedback
@@ -497,7 +487,6 @@ async function evaluateSenderPromotion(domain: string): Promise<void> {
           trust_score = ${newTrustScore}
         WHERE domain = ${domain}
       `;
-      console.log(`📉 Demoted ${domain} to suspicious (trust: ${newTrustScore})`);
     }
   } catch (error) {
     console.error('Failed to evaluate sender promotion:', error);

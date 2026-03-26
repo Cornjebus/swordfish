@@ -94,7 +94,7 @@ export interface IntegrationRecord {
  * Run sync for all active integrations
  */
 export async function runFullSync(): Promise<SyncResult[]> {
-  console.log('Starting full email sync...');
+  // Full email sync starting
 
   const integrations = await sql`
     SELECT id, tenant_id, type, config, last_sync_at
@@ -127,7 +127,7 @@ export async function runFullSync(): Promise<SyncResult[]> {
     }
   }
 
-  console.log(`Full sync complete. Processed ${results.length} integrations.`);
+  // Full sync complete
   return results;
 }
 
@@ -137,7 +137,7 @@ export async function runFullSync(): Promise<SyncResult[]> {
 export async function syncIntegration(integration: IntegrationRecord): Promise<SyncResult> {
   const startTime = Date.now();
 
-  console.log(`Syncing ${integration.type} integration for tenant ${integration.tenant_id}`);
+  // Syncing integration
 
   if (integration.type === 'o365') {
     return syncO365Integration(integration, startTime);
@@ -186,12 +186,9 @@ async function syncO365Integration(
       top: MAX_EMAILS_PER_SYNC,
     });
 
-    console.log(`[O365 Sync] Found ${emails.length} emails to process for tenant ${integration.tenant_id}`);
-
     for (const emailMeta of emails) {
       // Check timeout before processing each email
       if (Date.now() - startTime > SYNC_TIMEOUT_MS) {
-        console.log('[O365 Sync] Timeout reached, stopping early');
         timedOut = true;
         break;
       }
@@ -240,7 +237,6 @@ async function syncO365Integration(
               verdict: verdict.verdict,
               score: verdict.overallScore,
             });
-            console.log(`[O365 Sync] Auto-remediated email ${emailMeta.id} with verdict: ${verdict.verdict}`);
           } catch (remediationError) {
             console.error(`[O365 Sync] Auto-remediation failed for ${emailMeta.id}:`, remediationError);
           }
@@ -277,7 +273,6 @@ async function syncO365Integration(
       console.warn(`[O365 Sync] ${errorSummary} - last_sync_at NOT advanced to ensure no emails missed`);
     }
 
-    console.log(`[O365 Sync] Completed: ${emailsProcessed} processed, ${emailsSkipped} skipped, ${errors.length} errors`);
   } catch (error) {
     const syncError = categorizeError(error);
     errors.push(`List emails failed: ${syncError.message}`);
@@ -352,12 +347,9 @@ async function syncGmailIntegration(
       // Don't use labelIds - it can cause issues with Gmail's filtering
     });
 
-    console.log(`[Gmail Sync] Found ${messages.length} messages since ${sinceDate.toISOString()} for tenant ${integration.tenant_id}`);
-
     for (const messageMeta of messages) {
       // Check timeout before processing each email
       if (Date.now() - startTime > SYNC_TIMEOUT_MS) {
-        console.log('[Gmail Sync] Timeout reached, stopping early to avoid Vercel timeout');
         timedOut = true;
         break;
       }
@@ -410,7 +402,6 @@ async function syncGmailIntegration(
               verdict: verdict.verdict,
               score: verdict.overallScore,
             });
-            console.log(`[Gmail Sync] Auto-remediated email ${messageMeta.id} with verdict: ${verdict.verdict}`);
           } catch (remediationError) {
             console.error(`[Gmail Sync] Auto-remediation failed for ${messageMeta.id}:`, remediationError);
           }
@@ -447,7 +438,6 @@ async function syncGmailIntegration(
       console.warn(`[Gmail Sync] ${errorSummary} - last_sync_at NOT advanced to ensure no emails missed`);
     }
 
-    console.log(`[Gmail Sync] Completed: ${emailsProcessed} processed, ${emailsSkipped} skipped, ${errors.length} errors`);
   } catch (error) {
     const syncError = categorizeError(error);
     errors.push(`List messages failed: ${syncError.message}`);

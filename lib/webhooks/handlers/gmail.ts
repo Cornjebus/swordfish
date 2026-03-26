@@ -45,8 +45,6 @@ export async function processGmailWebhook(
 
     const { emailAddress, historyId } = notificationData;
 
-    console.log(`[Gmail Webhook] Processing notification for ${emailAddress}, history: ${historyId}`);
-
     // Find the integration for this email
     const integrations = await sql`
       SELECT id, tenant_id, config, nango_connection_id
@@ -103,8 +101,6 @@ export async function processGmailWebhook(
         }
       }
     }
-
-    console.log(`[Gmail Webhook] Found ${newMessageIds.size} new messages`);
 
     // Process each new message
     for (const messageId of newMessageIds) {

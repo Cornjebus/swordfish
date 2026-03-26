@@ -6,6 +6,7 @@ import { Sidebar } from './sidebar';
 import { TenantSwitcher } from './tenant-switcher';
 import { CommandPalette } from './command-palette';
 import { useTenant } from '@/lib/auth/tenant-context';
+import { toast } from 'sonner';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -40,11 +41,27 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       {isMobileSidebarOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div
-            className="fixed inset-0 bg-gray-600 bg-opacity-75"
+            className="fixed inset-0 bg-gray-600 bg-opacity-75 transition-opacity"
             onClick={() => setIsMobileSidebarOpen(false)}
           />
-          <div className="relative flex w-full max-w-xs flex-1">
-            <Sidebar />
+          <div className="relative flex w-full max-w-xs flex-1 flex-col">
+            {/* Close button */}
+            <div className="absolute right-0 top-0 -mr-12 pt-2">
+              <button
+                type="button"
+                className="ml-1 flex h-10 w-10 items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white"
+                onClick={() => setIsMobileSidebarOpen(false)}
+              >
+                <span className="sr-only">Close sidebar</span>
+                <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {/* Sidebar content -- clicks inside nav close the mobile menu */}
+            <div onClick={() => setIsMobileSidebarOpen(false)}>
+              <Sidebar />
+            </div>
           </div>
         </div>
       )}
@@ -99,7 +116,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             <button
               className="relative rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
               title="Notifications coming soon"
-              onClick={() => alert('Notifications feature coming soon!')}
+              onClick={() => toast.info('Notifications coming soon')}
             >
               <BellIcon className="h-5 w-5" />
             </button>

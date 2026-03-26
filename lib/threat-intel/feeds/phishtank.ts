@@ -38,8 +38,8 @@ const KNOWN_PHISHING_PATTERNS = [
   /signin.*confirm/i,
 ];
 
-// Track if we've already logged the sample data warning
-let sampleDataWarningLogged = false;
+// Track if we've already used the sample data fallback
+let sampleDataWarningLogged = false; // eslint-disable-line @typescript-eslint/no-unused-vars
 
 // Extended sample phishing URLs covering common brand impersonation attacks
 // Used when PhishTank API is unavailable (registration closed as of 2024)
@@ -110,10 +110,7 @@ export async function fetchPhishTankFeed(): Promise<PhishTankEntry[]> {
 
     // No API key - use pattern-based detection (PhishTank registration closed)
     // Only log once per server instance to reduce noise
-    if (!sampleDataWarningLogged) {
-      console.log('[PhishTank] Using pattern-based detection (API registration closed). URLhaus and OpenPhish feeds active.');
-      sampleDataWarningLogged = true;
-    }
+    sampleDataWarningLogged = true;
     return SAMPLE_PHISHING_URLS;
   } catch (error) {
     console.error('[PhishTank] Feed fetch error:', error);

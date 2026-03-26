@@ -259,7 +259,6 @@ export async function promoteToTrustedIfQualified(domain: string): Promise<boole
       WHERE domain = ${domain}
     `;
 
-    console.log(`📈 Promoted ${domain} to trusted (score: ${feedbackTrustScore}, safe feedback: ${feedback.safe}/${total})`);
     return true;
 
   } catch (error) {

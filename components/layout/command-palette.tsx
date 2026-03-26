@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import clsx from 'clsx';
 
 interface CommandPaletteProps {
@@ -36,8 +37,8 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
     { id: 'settings', name: 'Settings', description: 'Configure tenant settings', icon: CogIcon, action: () => router.push('/dashboard/settings'), category: 'navigation' },
 
     // Actions
-    { id: 'release-all', name: 'Release All Safe', description: 'Release all safe quarantined emails', icon: CheckIcon, action: () => console.log('Release all'), category: 'action' },
-    { id: 'export-report', name: 'Export Report', description: 'Download threat report', icon: DownloadIcon, action: () => console.log('Export'), category: 'action' },
+    { id: 'release-all', name: 'Release All Safe', description: 'Release all safe quarantined emails', icon: CheckIcon, action: () => { router.push('/dashboard/quarantine'); toast.info('Use bulk actions on the Quarantine page to release emails'); }, category: 'action' },
+    { id: 'export-report', name: 'Export Report', description: 'Download threat report', icon: DownloadIcon, action: () => router.push('/dashboard/reports?tab=export'), category: 'action' },
   ];
 
   // Filter commands based on query

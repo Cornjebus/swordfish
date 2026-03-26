@@ -21,7 +21,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('[Cron Sync] Starting scheduled email sync...');
     const startTime = Date.now();
 
     const results = await runFullSync();
@@ -37,8 +36,6 @@ export async function GET(request: NextRequest) {
       totalErrors: results.reduce((sum, r) => sum + r.errors.length, 0),
       anyTimedOut: results.some(r => r.timedOut),
     };
-
-    console.log('[Cron Sync] Complete:', summary);
 
     return NextResponse.json(summary);
   } catch (error) {

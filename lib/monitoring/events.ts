@@ -221,8 +221,8 @@ export function createEventTracker(config: EventTrackerConfig): EventTracker {
   return new EventTracker(config);
 }
 
-export const consoleEmitter: EventEmitter = (event) => {
-  console.log(JSON.stringify(event));
+export const consoleEmitter: EventEmitter = (_event) => {
+  // No-op in production; structured logging handled by RequestLogger
 };
 
 export const defaultEventTracker = createEventTracker({ emit: consoleEmitter });

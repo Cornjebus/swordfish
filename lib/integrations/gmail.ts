@@ -235,10 +235,6 @@ export async function exchangeGmailCode(params: {
   }
 
   const data = await response.json();
-  console.log('[Gmail OAuth] Token exchange SUCCESS');
-  console.log('[Gmail OAuth]   Scopes granted:', data.scope);
-  console.log('[Gmail OAuth]   Token expires in:', data.expires_in, 'seconds');
-
   return {
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
@@ -256,10 +252,6 @@ export async function refreshGmailToken(params: {
   clientSecret: string;
 }): Promise<OAuthTokens> {
   const { refreshToken, clientId, clientSecret } = params;
-
-  console.log('[Gmail OAuth] Attempting token refresh');
-  console.log('[Gmail OAuth]   clientId:', clientId?.substring(0, 30) + '...');
-  console.log('[Gmail OAuth]   refreshToken length:', refreshToken?.length || 0);
 
   const body = new URLSearchParams({
     client_id: clientId,
@@ -290,9 +282,6 @@ export async function refreshGmailToken(params: {
   }
 
   const data = await response.json();
-  console.log('[Gmail OAuth] Token refresh SUCCESS');
-  console.log('[Gmail OAuth]   New token expires in:', data.expires_in, 'seconds');
-
   return {
     accessToken: data.access_token,
     refreshToken: refreshToken, // Google doesn't always return new refresh token
@@ -493,7 +482,7 @@ export async function findGmailMessageByMessageId(params: {
   );
 
   if (!response.ok) {
-    console.log(`[gmail] Search failed for Message-ID: ${rfc822MessageId}`);
+    // Search failed for Message-ID lookup - non-critical
     return null;
   }
 

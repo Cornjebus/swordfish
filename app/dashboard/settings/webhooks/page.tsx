@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import Link from 'next/link';
 
 interface Webhook {
@@ -80,13 +81,13 @@ export default function WebhooksPage() {
       const response = await fetch(`/api/settings/webhooks/${id}/test`, { method: 'POST' });
       const data = await response.json();
       if (response.ok) {
-        alert(`Test successful! Response time: ${data.responseTime}ms`);
+        toast.success(`Test successful! Response time: ${data.responseTime}ms`);
       } else {
-        alert(`Test failed: ${data.error}`);
+        toast.error(`Test failed: ${data.error}`);
       }
       loadWebhooks();
-    } catch (error) {
-      alert('Test failed: Network error');
+    } catch {
+      toast.error('Test failed: Network error');
     } finally {
       setTestingId(null);
     }

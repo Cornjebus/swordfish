@@ -93,7 +93,6 @@ export async function enqueueWebhook(params: {
     ON CONFLICT (id) DO NOTHING
   `.catch(() => {
     // Table might not exist, use memory queue only
-    console.log('webhook_jobs table not found, using memory queue');
   });
 
   // Add to memory queue

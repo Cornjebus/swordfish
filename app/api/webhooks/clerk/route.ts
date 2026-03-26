@@ -114,7 +114,8 @@ export async function POST(request: NextRequest) {
         break;
 
       default:
-        console.log(`Unhandled webhook event: ${event.type}`);
+        // Unhandled event type -- acknowledge receipt
+        break;
     }
 
     return NextResponse.json({ received: true });
@@ -139,7 +140,6 @@ async function handleUserCreated(event: ClerkUserEvent) {
   )?.email_address;
 
   if (!primaryEmail) {
-    console.log('User created without email, skipping');
     return;
   }
 
@@ -227,13 +227,9 @@ async function handleUserCreated(event: ClerkUserEvent) {
         },
       });
 
-      console.log(`User ${primaryEmail} created with invitation role: ${invitation.role}`);
     }
-  } else {
-    // No invitation - just log that user was created in Clerk
-    // They will need to be invited to a tenant or accept an invitation later
-    console.log(`User ${primaryEmail} created in Clerk without pending invitation`);
   }
+  // No invitation - user will need to be invited to a tenant or accept an invitation later
 }
 
 /**
@@ -263,7 +259,6 @@ async function handleUserUpdated(event: ClerkUserEvent) {
     WHERE clerk_user_id = ${clerkUserId}
   `;
 
-  console.log(`User ${clerkUserId} updated: ${primaryEmail}`);
 }
 
 /**
@@ -310,5 +305,4 @@ async function handleMembershipCreated(event: ClerkMembershipEvent) {
       AND (tenant_id IS NULL OR tenant_id != ${tenant.id}::uuid)
   `;
 
-  console.log(`User ${clerkUserId} linked to tenant ${clerkOrgId} (role preserved: ${user.role})`);
 }

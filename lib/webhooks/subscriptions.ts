@@ -322,10 +322,8 @@ export async function renewExpiringSubscriptions(): Promise<{
 
         if (isNewRegistration) {
           registered++;
-          console.log(`[Subscriptions] Registered push for Gmail integration ${integration.id}`);
         } else {
           renewed++;
-          console.log(`[Subscriptions] Renewed push for Gmail integration ${integration.id}`);
         }
       }
     } catch (error) {

@@ -26,8 +26,6 @@ export async function POST(request: NextRequest) {
 
     const tenantId = orgId || `personal_${userId}`;
 
-    console.log(`[Backfill] Starting threats backfill for tenant: ${tenantId}`);
-
     // First, try to run migration to fix table schema if needed
     try {
       // Check if threats table exists and has correct column types
@@ -37,7 +35,6 @@ export async function POST(request: NextRequest) {
         WHERE table_name = 'threats'
         ORDER BY ordinal_position
       `;
-      console.log(`[Backfill] Threats table has ${tableCheck.length} columns`);
     } catch (schemaError) {
       console.error('[Backfill] Schema check failed:', schemaError);
     }
@@ -65,8 +62,6 @@ export async function POST(request: NextRequest) {
         AND t.message_id = ev.message_id
       )
     `;
-
-    console.log(`[Backfill] Found ${missingThreats.length} emails to backfill`);
 
     let inserted = 0;
     let errors = 0;
@@ -127,7 +122,6 @@ export async function POST(request: NextRequest) {
         `;
 
         inserted++;
-        console.log(`[Backfill] Inserted threat for message: ${safeMessageId?.substring(0, 30)}...`);
       } catch (insertError) {
         errors++;
         const errorMsg = insertError instanceof Error ? insertError.message : 'Unknown error';
@@ -135,8 +129,6 @@ export async function POST(request: NextRequest) {
         console.error(`[Backfill] Failed to insert:`, errorMsg);
       }
     }
-
-    console.log(`[Backfill] Complete: ${inserted} inserted, ${errors} errors`);
 
     return NextResponse.json({
       success: true,

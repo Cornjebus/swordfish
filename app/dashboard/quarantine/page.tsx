@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useTenant } from '@/lib/auth/tenant-context';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { Shield, CheckCircle, Inbox, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 
 interface Threat {
@@ -34,21 +36,45 @@ interface ThreatStats {
 
 type BulkAction = 'release' | 'delete' | 'false_positive' | 'blocklist' | 'allowlist';
 
+const ITEMS_PER_PAGE = 50;
+
 export default function QuarantinePage() {
   const { currentTenant } = useTenant();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const currentPage = Number(searchParams.get('page') || '1');
+  const statusFilter = (searchParams.get('status') || 'quarantined') as 'quarantined' | 'released' | 'deleted' | 'all';
+
   const [threats, setThreats] = useState<Threat[]>([]);
+  const [total, setTotal] = useState(0);
   const [stats, setStats] = useState<ThreatStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<'quarantined' | 'released' | 'deleted' | 'all'>('quarantined');
   const [selectedThreats, setSelectedThreats] = useState<Set<string>>(new Set());
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
+
+  const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
+
+  function updateParams(updates: Record<string, string>) {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      params.set(key, value);
+    }
+    router.replace(`?${params.toString()}`);
+  }
 
   const fetchThreats = useCallback(async () => {
     try {
-      const response = await fetch(`/api/threats?status=${statusFilter}&stats=true`);
+      const params = new URLSearchParams();
+      params.set('status', statusFilter);
+      params.set('stats', 'true');
+      params.set('page', String(currentPage));
+      params.set('limit', String(ITEMS_PER_PAGE));
+
+      const response = await fetch(`/api/threats?${params}`);
       const data = await response.json();
       setThreats(data.threats || []);
+      setTotal(data.total || data.threats?.length || 0);
       setStats(data.stats);
     } catch (error) {
       console.error('Failed to fetch threats:', error);
@@ -56,9 +82,10 @@ export default function QuarantinePage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, currentPage]);
 
   useEffect(() => {
+    setLoading(true);
     fetchThreats();
   }, [fetchThreats]);
 
@@ -120,7 +147,7 @@ export default function QuarantinePage() {
       setSelectedThreats(new Set());
       await fetchThreats();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : `Action failed`);
+      toast.error(error instanceof Error ? error.message : 'Action failed');
     } finally {
       setActionLoading(null);
     }
@@ -142,7 +169,6 @@ export default function QuarantinePage() {
     }
 
     setActionLoading('bulk');
-    setBulkMenuOpen(false);
     try {
       const res = await fetch('/api/threats/bulk', {
         method: 'POST',
@@ -222,6 +248,9 @@ export default function QuarantinePage() {
     );
   }
 
+  const startItem = (currentPage - 1) * ITEMS_PER_PAGE + 1;
+  const endItem = Math.min(currentPage * ITEMS_PER_PAGE, total);
+
   return (
     <div className="space-y-6">
       <div>
@@ -272,7 +301,7 @@ export default function QuarantinePage() {
                 : 'text-gray-500 hover:text-gray-700'
             }`}
             onClick={() => {
-              setStatusFilter(status);
+              updateParams({ status, page: '1' });
               setSelectedThreats(new Set());
             }}
           >
@@ -346,17 +375,21 @@ export default function QuarantinePage() {
           <CardDescription>
             {threats.length === 0
               ? `No ${statusFilter === 'all' ? '' : statusFilter} emails`
-              : `Showing ${threats.length} ${statusFilter === 'all' ? '' : statusFilter} email(s)`}
+              : `Showing ${startItem}-${endItem} of ${total} ${statusFilter === 'all' ? '' : statusFilter} email(s)`}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {threats.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <div className="text-4xl mb-4">
-                {statusFilter === 'quarantined' ? '🛡️' : statusFilter === 'released' ? '✅' : '📭'}
-              </div>
-              <p>No emails found</p>
-              <p className="text-sm mt-2">
+            <div className="text-center py-12">
+              {statusFilter === 'quarantined' ? (
+                <Shield className="mx-auto h-12 w-12 text-gray-400" />
+              ) : statusFilter === 'released' ? (
+                <CheckCircle className="mx-auto h-12 w-12 text-gray-400" />
+              ) : (
+                <Inbox className="mx-auto h-12 w-12 text-gray-400" />
+              )}
+              <h3 className="mt-2 text-sm font-semibold text-gray-900">No emails found</h3>
+              <p className="mt-1 text-sm text-gray-500">
                 Detected threats will appear here for review
               </p>
             </div>
@@ -482,6 +515,38 @@ export default function QuarantinePage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Pagination */}
+      {total > ITEMS_PER_PAGE && (
+        <div className="flex items-center justify-between bg-white rounded-lg shadow px-4 py-3">
+          <p className="text-sm text-gray-700">
+            Showing <span className="font-medium">{startItem}</span> to{' '}
+            <span className="font-medium">{endItem}</span> of{' '}
+            <span className="font-medium">{total}</span> results
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => updateParams({ page: String(currentPage - 1) })}
+              disabled={currentPage <= 1}
+              className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </button>
+            <span className="text-sm text-gray-700">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => updateParams({ page: String(currentPage + 1) })}
+              disabled={currentPage >= totalPages}
+              className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Action Reference */}
       <Card>

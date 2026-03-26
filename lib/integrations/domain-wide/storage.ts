@@ -125,7 +125,6 @@ export async function getActiveDomainConfigs(): Promise<DomainWideConfig[]> {
     // Handle case where domain_wide_configs table doesn't exist yet
     // This can happen if migration 013 hasn't been run in production
     if (error instanceof Error && error.message.includes('domain_wide_configs')) {
-      console.log('[Domain-Wide] Table not yet created, skipping domain-wide checks');
       return [];
     }
     throw error;

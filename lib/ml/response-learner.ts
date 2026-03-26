@@ -523,7 +523,7 @@ export class ResponseLearner {
   /**
    * Get false positive rate by category
    */
-  async getFalsePositiveRate(tenantId: string, category?: string): Promise<FPMetrics> {
+  async getFalsePositiveRate(tenantId: string, _category?: string): Promise<FPMetrics> {
     try {
       const decisions = await this.getDecisionHistory(tenantId, {
         startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
@@ -575,7 +575,7 @@ export class ResponseLearner {
   /**
    * Get false negative rate by threat type
    */
-  async getFalseNegativeRate(tenantId: string, threatType?: string): Promise<FNMetrics> {
+  async getFalseNegativeRate(tenantId: string, _threatType?: string): Promise<FNMetrics> {
     try {
       // Get emails that passed but were later reported/blocked
       const fnDecisions = await this.getDecisionHistory(tenantId, {
@@ -769,8 +769,8 @@ export class ResponseLearner {
 
       const actionBreakdown: Record<string, number> = {};
       const hourCounts: Record<number, number> = {};
-      let totalTimeToAction = 0;
-      let timeToActionCount = 0;
+      const totalTimeToAction = 0;
+      const timeToActionCount = 0;
 
       for (const action of actions) {
         const actionType = action.admin_action as string;
@@ -1484,7 +1484,6 @@ export class ResponseLearner {
         )
       `;
 
-      console.log(`[ResponseLearner] Applied threshold adjustment ${adjustmentId} for tenant ${tenantId}`);
     } catch (error) {
       console.error('[ResponseLearner] Error applying threshold adjustment:', error);
       throw new Error('Failed to apply threshold adjustment');
@@ -1522,7 +1521,6 @@ export class ResponseLearner {
         WHERE id = ${adjustmentId}
       `;
 
-      console.log(`[ResponseLearner] Rolled back threshold adjustment ${adjustmentId} for tenant ${tenantId}`);
     } catch (error) {
       console.error('[ResponseLearner] Error rolling back threshold adjustment:', error);
       if (error instanceof Error && error.message === 'Adjustment record not found') {
@@ -1721,10 +1719,7 @@ export class ResponseLearner {
     const count = parseInt(recentDomainDecisions[0]?.count || '0', 10);
 
     if (count >= 5 && decision.adminAction === 'release') {
-      console.log(
-        `[ResponseLearner] Emerging pattern detected: Domain ${decision.emailFeatures.senderDomain} ` +
-        `has been released ${count} times in the last 7 days. Consider whitelisting.`
-      );
+      // Emerging pattern: domain released frequently - consider whitelisting
     }
   }
 
@@ -1740,9 +1735,7 @@ export class ResponseLearner {
     const count = parseInt(recentActions[0]?.count || '0', 10);
 
     if (count >= 20) {
-      console.log(
-        `[ResponseLearner] High action volume: ${count} "${action.action}" actions in the last 24 hours`
-      );
+      // High action volume detected - may indicate policy tuning needed
     }
   }
 
@@ -1971,14 +1964,12 @@ export class ResponseLearner {
     return overrides.length / decisions.length;
   }
 
-  private async recordFalseNegative(feedback: Record<string, unknown>): Promise<void> {
-    console.log('[ResponseLearner] Recording false negative for learning:', feedback);
-    // This would be used to weight training data or adjust models
+  private async recordFalseNegative(_feedback: Record<string, unknown>): Promise<void> {
+    // Placeholder: would be used to weight training data or adjust models
   }
 
-  private async strengthenFalsePositivePattern(feedback: Record<string, unknown>): Promise<void> {
-    console.log('[ResponseLearner] Strengthening false positive pattern:', feedback);
-    // This would increase confidence in existing FP patterns
+  private async strengthenFalsePositivePattern(_feedback: Record<string, unknown>): Promise<void> {
+    // Placeholder: would increase confidence in existing FP patterns
   }
 
   private determineSignalType(action: AdminAction): LearningSignal['signalType'] {
@@ -2123,7 +2114,7 @@ export class ResponseLearner {
   private wilsonConfidenceInterval(
     successes: number,
     total: number,
-    confidence: number = 0.95
+    _confidence: number = 0.95
   ): { lower: number; upper: number } {
     if (total === 0) return { lower: 0, upper: 0 };
 

@@ -83,7 +83,7 @@ export default function ThreatDetailPage() {
       if (!response.ok) throw new Error('Failed to release');
       setThreat({ ...threat, status: 'released', releasedAt: new Date().toISOString() });
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Release failed');
+      toast.error(err instanceof Error ? err.message : 'Release failed');
     } finally {
       setActionLoading(false);
     }
@@ -97,9 +97,10 @@ export default function ThreatDetailPage() {
         method: 'DELETE',
       });
       if (!response.ok) throw new Error('Failed to delete');
+      toast.success('Threat deleted');
       router.push('/dashboard/threats');
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Delete failed');
+      toast.error(err instanceof Error ? err.message : 'Delete failed');
     } finally {
       setActionLoading(false);
     }

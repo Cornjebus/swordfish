@@ -1,6 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { Mail, ChevronLeft, ChevronRight, X, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 
 interface Signal {
@@ -34,47 +37,69 @@ const verdictConfig = {
     label: 'Safe',
     bgClass: 'bg-green-100',
     textClass: 'text-green-800',
-    icon: '✓',
+    icon: '\u2713',
   },
   suspicious: {
     label: 'Suspicious',
     bgClass: 'bg-orange-100',
     textClass: 'text-orange-800',
-    icon: '⚠',
+    icon: '\u26A0',
   },
   quarantine: {
     label: 'Quarantined',
     bgClass: 'bg-yellow-100',
     textClass: 'text-yellow-800',
-    icon: '📦',
+    icon: '\u2588',
   },
   block: {
     label: 'Blocked',
     bgClass: 'bg-red-100',
     textClass: 'text-red-800',
-    icon: '🛑',
+    icon: '\u2716',
   },
 };
 
-const AUTO_REFRESH_INTERVAL = 30000; // 30 seconds
+const ITEMS_PER_PAGE = 50;
+const AUTO_REFRESH_INTERVAL = 30000;
 
 export default function ScannedEmailsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const currentPage = Number(searchParams.get('page') || '1');
+  const currentFilter = searchParams.get('verdict') || 'all';
+
   const [emails, setEmails] = useState<ScannedEmail[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [filter, setFilter] = useState<string>('all');
   const [selectedEmail, setSelectedEmail] = useState<ScannedEmail | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  const totalPages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
+
+  function updateParams(updates: Record<string, string>) {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === 'all' && key === 'verdict') {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+    }
+    router.replace(`?${params.toString()}`);
+  }
+
   const fetchEmails = useCallback(async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
-      const params = new URLSearchParams({ limit: '100' });
-      if (filter !== 'all') {
-        params.set('verdict', filter);
+      const params = new URLSearchParams();
+      params.set('limit', String(ITEMS_PER_PAGE));
+      params.set('page', String(currentPage));
+      if (currentFilter !== 'all') {
+        params.set('verdict', currentFilter);
       }
 
       const res = await fetch(`/api/dashboard/emails?${params}`);
@@ -89,18 +114,16 @@ export default function ScannedEmailsPage() {
     } finally {
       if (showLoading) setIsLoading(false);
     }
-  }, [filter]);
+  }, [currentFilter, currentPage]);
 
-  // Initial fetch and filter changes
   useEffect(() => {
     fetchEmails();
   }, [fetchEmails]);
 
-  // Auto-refresh interval
   useEffect(() => {
     if (autoRefresh) {
       intervalRef.current = setInterval(() => {
-        fetchEmails(false); // Silent refresh (no loading spinner)
+        fetchEmails(false);
       }, AUTO_REFRESH_INTERVAL);
     }
 
@@ -126,16 +149,16 @@ export default function ScannedEmailsPage() {
         body: JSON.stringify({ addToAllowlist: false }),
       });
       if (response.ok) {
-        // Update local state
+        toast.success('Email released to inbox');
         setSelectedEmail(null);
         await fetchEmails();
       } else {
         const data = await response.json();
-        alert(`Failed to release: ${data.error || 'Unknown error'}`);
+        toast.error(`Failed to release: ${data.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to release email:', error);
-      alert('Failed to release email');
+      toast.error('Failed to release email');
     } finally {
       setActionLoading(null);
     }
@@ -151,15 +174,16 @@ export default function ScannedEmailsPage() {
         method: 'DELETE',
       });
       if (response.ok) {
+        toast.success('Email permanently deleted');
         setSelectedEmail(null);
         await fetchEmails();
       } else {
         const data = await response.json();
-        alert(`Failed to delete: ${data.error || 'Unknown error'}`);
+        toast.error(`Failed to delete: ${data.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to delete email:', error);
-      alert('Failed to delete email');
+      toast.error('Failed to delete email');
     } finally {
       setActionLoading(null);
     }
@@ -170,6 +194,9 @@ export default function ScannedEmailsPage() {
     acc[email.verdict] = (acc[email.verdict] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
+
+  const startItem = (currentPage - 1) * ITEMS_PER_PAGE + 1;
+  const endItem = Math.min(currentPage * ITEMS_PER_PAGE, total);
 
   return (
     <div className="space-y-6">
@@ -218,7 +245,7 @@ export default function ScannedEmailsPage() {
             onClick={() => fetchEmails()}
             className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            <RefreshIcon className="h-4 w-4" />
+            <RefreshCw className="h-4 w-4" />
             Refresh
           </button>
         </div>
@@ -236,10 +263,10 @@ export default function ScannedEmailsPage() {
           ].map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setFilter(tab.key)}
+              onClick={() => updateParams({ verdict: tab.key, page: '1' })}
               className={clsx(
                 'whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium',
-                filter === tab.key
+                currentFilter === tab.key
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
               )}
@@ -248,7 +275,7 @@ export default function ScannedEmailsPage() {
               <span
                 className={clsx(
                   'ml-2 rounded-full px-2.5 py-0.5 text-xs font-medium',
-                  filter === tab.key
+                  currentFilter === tab.key
                     ? 'bg-blue-100 text-blue-600'
                     : 'bg-gray-100 text-gray-900'
                 )}
@@ -267,13 +294,13 @@ export default function ScannedEmailsPage() {
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
           </div>
         ) : emails.length === 0 ? (
-          <div className="px-6 py-12 text-center">
-            <MailIcon className="mx-auto h-12 w-12 text-gray-300" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No emails found</h3>
+          <div className="text-center py-12">
+            <Mail className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-2 text-sm font-semibold text-gray-900">No emails found</h3>
             <p className="mt-1 text-sm text-gray-500">
-              {filter === 'all'
+              {currentFilter === 'all'
                 ? 'No emails have been scanned yet. Click "Sync Now" on the Integrations page.'
-                : `No emails with verdict "${filter}" found.`}
+                : `No emails with verdict "${currentFilter}" found.`}
             </p>
           </div>
         ) : (
@@ -334,6 +361,38 @@ export default function ScannedEmailsPage() {
         )}
       </div>
 
+      {/* Pagination */}
+      {total > ITEMS_PER_PAGE && (
+        <div className="flex items-center justify-between bg-white rounded-lg shadow px-4 py-3">
+          <p className="text-sm text-gray-700">
+            Showing <span className="font-medium">{startItem}</span> to{' '}
+            <span className="font-medium">{endItem}</span> of{' '}
+            <span className="font-medium">{total}</span> results
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => updateParams({ page: String(currentPage - 1) })}
+              disabled={currentPage <= 1}
+              className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </button>
+            <span className="text-sm text-gray-700">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => updateParams({ page: String(currentPage + 1) })}
+              disabled={currentPage >= totalPages}
+              className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Detail Slide-over */}
       {selectedEmail && (
         <div className="fixed inset-0 z-50 overflow-hidden">
@@ -355,7 +414,7 @@ export default function ScannedEmailsPage() {
                       className="rounded-md bg-white text-gray-400 hover:text-gray-500"
                     >
                       <span className="sr-only">Close</span>
-                      <XIcon className="h-6 w-6" />
+                      <X className="h-6 w-6" />
                     </button>
                   </div>
                 </div>
@@ -445,7 +504,7 @@ export default function ScannedEmailsPage() {
                     <div>
                       <dt className="text-sm font-medium text-gray-500">Processing</dt>
                       <dd className="mt-1 text-sm text-gray-500">
-                        Analyzed in {selectedEmail.processingTimeMs}ms • Confidence: {Math.round(selectedEmail.confidence * 100)}%
+                        Analyzed in {selectedEmail.processingTimeMs}ms | Confidence: {Math.round(selectedEmail.confidence * 100)}%
                       </dd>
                     </div>
 
@@ -467,9 +526,7 @@ export default function ScannedEmailsPage() {
                           >
                             {actionLoading === selectedEmail.threatId ? (
                               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                            ) : (
-                              '✓'
-                            )}
+                            ) : null}
                             Release to Inbox
                           </button>
                           <button
@@ -477,7 +534,7 @@ export default function ScannedEmailsPage() {
                             disabled={actionLoading === selectedEmail.threatId}
                             className="inline-flex justify-center items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
                           >
-                            ✕ Delete
+                            Delete
                           </button>
                         </dd>
                         <p className="mt-2 text-xs text-gray-500">
@@ -491,7 +548,7 @@ export default function ScannedEmailsPage() {
                       <div className="border-t pt-6">
                         <div className="rounded-md bg-green-50 p-3">
                           <p className="text-sm text-green-800">
-                            ✓ This email has been released to your inbox
+                            This email has been released to your inbox
                           </p>
                         </div>
                       </div>
@@ -514,37 +571,5 @@ export default function ScannedEmailsPage() {
         </div>
       )}
     </div>
-  );
-}
-
-function RefreshIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-      />
-    </svg>
-  );
-}
-
-function MailIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
-      />
-    </svg>
-  );
-}
-
-function XIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-    </svg>
   );
 }

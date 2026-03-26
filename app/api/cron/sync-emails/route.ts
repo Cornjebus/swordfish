@@ -35,8 +35,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('[Cron] Starting email sync job...');
-
     // Find active integrations that need sync
     // Only get integrations where syncEnabled is true in config
     // Use LEFT JOIN matching tenant_id against both clerk_org_id and id::text
@@ -61,8 +59,6 @@ export async function GET(request: NextRequest) {
     // All connected integrations are valid (direct OAuth handles token refresh)
     const validIntegrations = integrations;
 
-    console.log(`[Cron] Found ${validIntegrations.length} integrations to sync`);
-
     const results: SyncResult[] = [];
     const errors: string[] = [];
     let timedOut = false;
@@ -70,14 +66,11 @@ export async function GET(request: NextRequest) {
     for (const integration of validIntegrations) {
       // Check if we're running out of time
       if (Date.now() - startTime > CRON_TIMEOUT_MS) {
-        console.log('[Cron] Timeout approaching, stopping to avoid Vercel timeout');
         timedOut = true;
         break;
       }
 
       try {
-        console.log(`[Cron] Syncing ${integration.type} for tenant ${integration.tenant_id}`);
-
         // Actually sync emails using the worker (direct OAuth - no Nango)
         const result = await syncIntegration({
           id: integration.id,
@@ -93,7 +86,6 @@ export async function GET(request: NextRequest) {
           errors.push(...result.errors.map(e => `${integration.tenant_id}: ${e}`));
         }
 
-        console.log(`[Cron] Completed ${integration.type} sync: ${result.emailsProcessed} emails, ${result.threatsFound} threats`);
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Sync failed';
         errors.push(`${integration.tenant_id}: ${errorMsg}`);
@@ -120,8 +112,6 @@ export async function GET(request: NextRequest) {
       timedOut,
       errors: errors.length > 0 ? errors : undefined,
     };
-
-    console.log(`[Cron] Sync complete:`, summary);
 
     return NextResponse.json(summary);
   } catch (error) {

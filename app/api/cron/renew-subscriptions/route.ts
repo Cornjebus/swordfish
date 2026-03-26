@@ -19,7 +19,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('[Cron] Starting subscription renewal...');
     const startTime = Date.now();
 
     const result = await renewExpiringSubscriptions();
@@ -33,8 +32,6 @@ export async function GET(request: NextRequest) {
       failed: result.failed,
       errors: result.errors.length > 0 ? result.errors : undefined,
     };
-
-    console.log('[Cron] Subscription renewal complete:', summary);
 
     return NextResponse.json(summary);
   } catch (error) {

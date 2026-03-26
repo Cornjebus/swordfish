@@ -5,6 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
+import { BarChart3 } from 'lucide-react';
 
 interface ScheduledReport {
   id: string;
@@ -69,8 +71,8 @@ export default function ReportsPage() {
       const response = await fetch('/api/reports/scheduled');
       const data = await response.json();
       setReports(data.reports || []);
-    } catch (error) {
-      console.error('Failed to fetch reports:', error);
+    } catch {
+      toast.error('Failed to load reports');
     }
   }, []);
 
@@ -79,8 +81,8 @@ export default function ReportsPage() {
       const response = await fetch('/api/analytics/performance?days=30');
       const data = await response.json();
       setPerformance(data);
-    } catch (error) {
-      console.error('Failed to fetch performance:', error);
+    } catch {
+      // Silently fail - performance data is supplementary
     }
   }, []);
 
@@ -126,8 +128,7 @@ export default function ReportsPage() {
         const data = await response.json();
         setCreateError(data.error || 'Failed to create report');
       }
-    } catch (error) {
-      console.error('Failed to create report:', error);
+    } catch {
       setCreateError('Failed to create report. Please try again.');
     } finally {
       setCreating(false);
@@ -141,9 +142,10 @@ export default function ReportsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !enabled }),
       });
+      toast.success(`Report ${!enabled ? 'resumed' : 'paused'}`);
       fetchReports();
-    } catch (error) {
-      console.error('Failed to toggle report:', error);
+    } catch {
+      toast.error('Failed to update report');
     }
   }
 
@@ -152,9 +154,10 @@ export default function ReportsPage() {
 
     try {
       await fetch(`/api/reports/scheduled/${reportId}`, { method: 'DELETE' });
+      toast.success('Report deleted');
       fetchReports();
-    } catch (error) {
-      console.error('Failed to delete report:', error);
+    } catch {
+      toast.error('Failed to delete report');
     }
   }
 
@@ -171,8 +174,8 @@ export default function ReportsPage() {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Failed to export:', error);
+    } catch {
+      toast.error('Failed to export report');
     }
     setExporting(null);
   }
@@ -406,10 +409,10 @@ export default function ReportsPage() {
 
             {/* Reports List */}
             {reports.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <div className="text-4xl mb-4">📊</div>
-                <p>No scheduled reports</p>
-                <p className="text-sm mt-2">Create a report to receive automated updates</p>
+              <div className="text-center py-12">
+                <BarChart3 className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-2 text-sm font-semibold text-gray-900">No scheduled reports</h3>
+                <p className="mt-1 text-sm text-gray-500">Create a report to receive automated updates</p>
               </div>
             ) : (
               <div className="space-y-4">
