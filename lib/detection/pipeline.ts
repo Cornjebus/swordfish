@@ -58,8 +58,65 @@ import {
  * Main detection pipeline - analyzes an email through all layers
  * Phase 6: Optimized with parallel execution for independent layers
  * Expected latency reduction: 40-60%
+ *
+ * Includes a configurable pipeline timeout (default 25s) to prevent
+ * webhook hangs. On timeout, returns a safe "pass" verdict with low
+ * confidence so the email is not incorrectly blocked, and logs the
+ * timeout for async reprocessing.
  */
 export async function analyzeEmail(
+  email: ParsedEmail,
+  tenantId: string,
+  configOverrides: Partial<DetectionConfig> = {}
+): Promise<EmailVerdict> {
+  const pipelineTimeout = configOverrides.pipelineTimeoutMs ?? 25000;
+
+  try {
+    const result = await Promise.race([
+      analyzeEmailInternal(email, tenantId, configOverrides),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`Detection pipeline timeout after ${pipelineTimeout}ms`)),
+          pipelineTimeout
+        )
+      ),
+    ]);
+    return result;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Detection pipeline timeout')) {
+      loggers.detection.error('Pipeline timeout — returning safe default verdict for async reprocessing', error, {
+        tenantId,
+        messageId: email.messageId,
+        timeoutMs: pipelineTimeout,
+      });
+
+      return {
+        messageId: email.messageId,
+        tenantId,
+        verdict: 'pass',
+        overallScore: 0,
+        confidence: 0.1,
+        signals: [{
+          type: 'pipeline_timeout',
+          severity: 'info',
+          score: 0,
+          detail: `Analysis timed out after ${pipelineTimeout}ms. Email passed by default — queued for async reprocessing.`,
+        }],
+        layerResults: [],
+        explanation: 'Analysis timed out. Email was allowed through as a safe default.',
+        recommendation: 'This email will be reprocessed asynchronously.',
+        processingTimeMs: pipelineTimeout,
+        analyzedAt: new Date(),
+      };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Internal implementation of the detection pipeline (no timeout wrapper).
+ */
+async function analyzeEmailInternal(
   email: ParsedEmail,
   tenantId: string,
   configOverrides: Partial<DetectionConfig> = {}

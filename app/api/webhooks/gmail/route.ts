@@ -286,9 +286,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     log.error('Gmail webhook error', error instanceof Error ? error : new Error(String(error)));
 
-    // If Neon is saturated with connection attempts, don't keep failing
-    // the webhook and triggering aggressive retries from Gmail. Instead,
-    // log and return a soft success so that cron/manual sync can catch up.
+    // If Neon is saturated with connection attempts, return 503 so Google
+    // Pub/Sub applies exponential backoff and retries later. Returning 200
+    // would silently drop the notification, losing emails.
     if (
       error instanceof Error &&
       (error.message.includes('Too many connections attempts') ||
@@ -297,9 +297,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           status: 'db_backpressure',
-          message: 'Neon connection limit reached; skipping webhook processing',
+          message: 'Database temporarily unavailable',
         },
-        { status: 200 }
+        { status: 503, headers: { 'Retry-After': '30' } }
       );
     }
 

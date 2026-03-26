@@ -190,8 +190,11 @@ async function processNotification(notification: GraphNotification['value'][0]) 
   // Parse email
   const parsedEmail = parseGraphEmail(message);
 
-  // Analyze
-  const verdict = await analyzeEmail(parsedEmail, tenantId);
+  // Analyze - skip LLM here to keep webhook fast and avoid timeouts.
+  // LLM analysis can run asynchronously via cron/queue if needed.
+  const verdict = await analyzeEmail(parsedEmail, tenantId, {
+    skipLLM: true,
+  });
 
   // Store verdict
   await storeVerdict(tenantId, parsedEmail.messageId, verdict, parsedEmail);

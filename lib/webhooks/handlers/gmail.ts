@@ -109,11 +109,12 @@ export async function processGmailWebhook(
     // Process each new message
     for (const messageId of newMessageIds) {
       try {
-        // Check if already processed
+        // Check if already processed using exact match (no LIKE patterns)
         const existing = await sql`
           SELECT id FROM email_verdicts
           WHERE tenant_id = ${tenantId}
-          AND message_id LIKE ${`%${messageId}%`}
+          AND message_id = ${messageId}
+          LIMIT 1
         `;
 
         if (existing.length > 0) {

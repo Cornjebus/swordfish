@@ -373,11 +373,12 @@ async function syncGmailIntegration(
         // Parse email to get proper message ID
         const parsedEmail = parseGmailEmail(fullMessage);
 
-        // Check if already processed using exact match on parsed message ID
+        // Check if already processed using exact match (no LIKE patterns)
         const existing = await sql`
           SELECT id FROM email_verdicts
           WHERE tenant_id = ${integration.tenant_id}
-          AND (message_id = ${parsedEmail.messageId} OR message_id LIKE ${`%${messageMeta.id}%`})
+          AND message_id = ${parsedEmail.messageId}
+          LIMIT 1
         `;
 
         if (existing.length > 0) {
