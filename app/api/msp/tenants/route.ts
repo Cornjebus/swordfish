@@ -201,7 +201,7 @@ export async function POST(request: NextRequest) {
         await sql`
           INSERT INTO policies (tenant_id, type, target, value, action, priority, is_active, created_at, updated_at)
           VALUES (
-            ${clerkOrgId},
+            ${tenantId},
             ${policy.type},
             ${policy.target},
             ${policy.value},

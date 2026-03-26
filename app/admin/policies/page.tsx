@@ -1,6 +1,23 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+
+interface TenantOption {
+  id: string;
+  name: string;
+  domain: string | null;
+  plan: string;
+}
 
 interface PolicyTemplate {
   id: string;
@@ -33,6 +50,11 @@ export default function PolicyTemplatesPage() {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<PolicyTemplate | null>(null);
+  const [applyTemplate, setApplyTemplate] = useState<PolicyTemplate | null>(null);
+  const [tenants, setTenants] = useState<TenantOption[]>([]);
+  const [selectedTenantId, setSelectedTenantId] = useState('');
+  const [applying, setApplying] = useState(false);
+  const [tenantsLoading, setTenantsLoading] = useState(false);
 
   useEffect(() => {
     loadTemplates();
@@ -65,6 +87,54 @@ export default function PolicyTemplatesPage() {
       }
     } catch (error) {
       console.error('Failed to delete template:', error);
+    }
+  }
+
+  async function openApplyDialog(template: PolicyTemplate) {
+    setApplyTemplate(template);
+    setSelectedTenantId('');
+    setTenantsLoading(true);
+    try {
+      const response = await fetch('/api/msp/tenants');
+      if (response.ok) {
+        const data = await response.json();
+        setTenants(data.tenants || []);
+      }
+    } catch (error) {
+      console.error('Failed to load tenants:', error);
+      toast.error('Failed to load tenant list');
+    } finally {
+      setTenantsLoading(false);
+    }
+  }
+
+  async function handleApplyPolicy() {
+    if (!applyTemplate || !selectedTenantId) return;
+    setApplying(true);
+
+    try {
+      const response = await fetch(`/api/msp/tenants/${selectedTenantId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings: {
+            detection: applyTemplate.settings.detection,
+            actions: applyTemplate.settings.actions,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to apply policy');
+      }
+
+      toast.success(`Policy "${applyTemplate.name}" applied successfully`);
+      setApplyTemplate(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to apply policy');
+    } finally {
+      setApplying(false);
     }
   }
 
@@ -194,7 +264,10 @@ export default function PolicyTemplatesPage() {
                 <span className="text-sm text-gray-500">
                   Used by {template.usageCount} tenant{template.usageCount !== 1 ? 's' : ''}
                 </span>
-                <button className="text-sm text-blue-600 hover:text-blue-800">
+                <button
+                  onClick={() => openApplyDialog(template)}
+                  className="text-sm text-blue-600 hover:text-blue-800"
+                >
                   Apply to Tenant
                 </button>
               </div>
@@ -213,6 +286,68 @@ export default function PolicyTemplatesPage() {
           }}
         />
       )}
+
+      {/* Apply to Tenant Dialog */}
+      <Dialog open={!!applyTemplate} onOpenChange={(open) => { if (!open) setApplyTemplate(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Apply Policy to Tenant</DialogTitle>
+            <DialogDescription>
+              Apply the &ldquo;{applyTemplate?.name}&rdquo; detection settings to a tenant.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {tenantsLoading ? (
+              <div className="flex items-center justify-center py-6">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
+              </div>
+            ) : tenants.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">No tenants available</p>
+            ) : (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Select Tenant</label>
+                <select
+                  value={selectedTenantId}
+                  onChange={(e) => setSelectedTenantId(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                >
+                  <option value="">Choose a tenant...</option>
+                  {tenants.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} {t.domain ? `(${t.domain})` : ''} - {t.plan}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {applyTemplate && (
+              <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
+                <p className="font-medium text-gray-700">Settings to apply:</p>
+                <p className="text-gray-600">Suspicious: {applyTemplate.settings.detection.suspiciousThreshold}%</p>
+                <p className="text-gray-600">Quarantine: {applyTemplate.settings.detection.quarantineThreshold}%</p>
+                <p className="text-gray-600">Block: {applyTemplate.settings.detection.blockThreshold}%</p>
+                <p className="text-gray-600">
+                  LLM Analysis: {applyTemplate.settings.detection.enableLlmAnalysis ? 'Enabled' : 'Disabled'}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApplyTemplate(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleApplyPolicy}
+              disabled={!selectedTenantId || applying}
+            >
+              {applying ? 'Applying...' : 'Apply Policy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Detail Modal */}
       {selectedTemplate && (

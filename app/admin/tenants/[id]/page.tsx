@@ -316,10 +316,115 @@ export default function TenantDetailPage() {
       )}
 
       {activeTab === 'activity' && (
-        <div className="bg-white rounded-lg border p-6">
-          <p className="text-gray-500">Activity log coming soon...</p>
-        </div>
+        <ActivityTab tenantId={tenantId} />
       )}
+    </div>
+  );
+}
+
+interface ActivityEntry {
+  id: string;
+  actorEmail: string | null;
+  actorId: string;
+  action: string;
+  resourceType: string;
+  resourceId: string | null;
+  createdAt: string;
+}
+
+function ActivityTab({ tenantId }: { tenantId: string }) {
+  const [activities, setActivities] = useState<ActivityEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadActivities();
+  }, [tenantId]);
+
+  async function loadActivities() {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams({
+        tenantId,
+        limit: '50',
+      });
+      const response = await fetch(`/api/admin/audit?${params}`);
+      if (response.ok) {
+        const data = await response.json();
+        setActivities(data.logs || []);
+      }
+    } catch (error) {
+      console.error('Failed to load activities:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function getActionColor(action: string) {
+    if (action.includes('created')) return 'bg-green-100 text-green-700';
+    if (action.includes('updated')) return 'bg-blue-100 text-blue-700';
+    if (action.includes('deleted')) return 'bg-red-100 text-red-700';
+    if (action.includes('released')) return 'bg-yellow-100 text-yellow-700';
+    return 'bg-gray-100 text-gray-700';
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-lg border p-8">
+        <div className="flex justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+        </div>
+      </div>
+    );
+  }
+
+  if (activities.length === 0) {
+    return (
+      <div className="bg-white rounded-lg border p-8 text-center">
+        <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <p className="text-gray-500">No activity recorded yet</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-lg border overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Timestamp</th>
+              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Actor</th>
+              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Action</th>
+              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Resource</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {activities.map((activity) => (
+              <tr key={activity.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                  {new Date(activity.createdAt).toLocaleString()}
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-900">
+                  {activity.actorEmail || (activity.actorId ? activity.actorId.substring(0, 12) + '...' : 'System')}
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 text-xs font-medium rounded ${getActionColor(activity.action)}`}>
+                    {activity.action}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-600">
+                  <span className="capitalize">{activity.resourceType}</span>
+                  {activity.resourceId && (
+                    <span className="text-gray-400 ml-1">#{activity.resourceId.substring(0, 8)}</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
